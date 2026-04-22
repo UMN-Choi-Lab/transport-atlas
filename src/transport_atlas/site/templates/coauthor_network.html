@@ -841,10 +841,37 @@ function updateSelectedPanel(n) {
   const box = document.getElementById('selected');
   if (!n) { box.innerHTML = ''; return; }
   const neighbors = edges.filter(x => x.source === n || x.target === n).length;
+  const acList = Array.isArray(n.ac) ? n.ac : [];
+  const acTotal = acList.length;
   const subj = encodeURIComponent(`Transport Atlas: wrong attribution for "${n.label}"`);
   const body = encodeURIComponent(reportBodyForNode(n));
   let html = `<div class="name">${escHtml(n.label)}</div>`
-    + `<div class="stat">${n.papers} papers · ${neighbors} co-authors in view · last ${n.last_year}</div>`;
+    + `<div class="stat">${n.papers} papers · ${neighbors} in view / ${acTotal} total co-authors · last ${n.last_year}</div>`;
+
+  // Full co-author list (includes 1-collab ties filtered out of the graph)
+  if (acList.length) {
+    const visibleEdgeIds = new Set();
+    for (const e of edges) {
+      if (e.source === n) visibleEdgeIds.add(e.target.id ?? e.target);
+      else if (e.target === n) visibleEdgeIds.add(e.source.id ?? e.source);
+    }
+    const rows = acList.slice(0, 12).map(([cid, cnt]) => {
+      const coNode = nodeById.get(cid) || allNodes.find(x => x.id === cid);
+      const lbl = coNode ? coNode.label : '(unknown)';
+      const inView = visibleEdgeIds.has(cid);
+      const dim = inView ? '' : ' style="opacity:0.65;"';
+      const tag = inView ? '' : ` <span title="Below current edge threshold" style="color:#94a3b8;font-size:10px;">weak</span>`;
+      return `<div class="sim-item" data-acid="${cid}"${dim} `
+           + `style="padding:3px 6px;cursor:pointer;display:flex;justify-content:space-between;`
+           + `gap:8px;border-radius:3px;font-size:11.5px;">`
+           + `<span style="flex:1;">${escHtml(lbl)}${tag}</span>`
+           + `<span style="color:#9ca3af;font-size:10.5px;">${cnt}×</span></div>`;
+    }).join('');
+    html += `<div style="margin-top:8px;color:#9ca3af;font-size:11px;">`
+         + `Co-authors (${acList.length} shown${acTotal > 12 ? ', top ' + Math.min(12, acList.length) : ''}):`
+         + `</div><div id="ac-list" style="margin-top:3px;">${rows}</div>`;
+  }
+
   const sims = SIMILAR[String(n.id)] || [];
   if (sims.length) {
     const shown = sims.slice(0, 8);
@@ -874,10 +901,11 @@ function updateSelectedPanel(n) {
   box.innerHTML = html;
   document.getElementById('report-node-copy').addEventListener('click', () =>
     copyText(reportBodyForNode(n), 'Node details copied — paste into email or GitHub'));
-  // Clicking a semantic neighbor centers on that node
+  // Clicking a semantic neighbor or coauthor-list item centers on that node
   box.querySelectorAll('.sim-item').forEach(el => el.addEventListener('click', () => {
-    const target = nodes.find(x => x.id === +el.dataset.sid)
-                   || allNodes.find(x => x.id === +el.dataset.sid);
+    const sid = el.dataset.sid ? +el.dataset.sid : +el.dataset.acid;
+    if (Number.isNaN(sid)) return;
+    const target = nodes.find(x => x.id === sid) || allNodes.find(x => x.id === sid);
     if (target) centerOnNode(target);
   }));
   box.querySelectorAll('.sim-item').forEach(el => {
@@ -926,8 +954,14 @@ const resultsDiv = document.getElementById('results');
 searchInput.addEventListener('input', (e) => {
   const q = e.target.value.trim().toLowerCase();
   if (!q) { resultsDiv.innerHTML = ''; return; }
+  // Labels are "last, first" — AND-match on whitespace-split tokens so
+  // "Cathy Wu" finds "wu, cathy".
+  const terms = q.split(/\s+/).filter(Boolean);
   const visibleIds = new Set(nodes.map(n => n.id));
-  const matches = allNodes.filter(n => n.label.toLowerCase().includes(q))
+  const matches = allNodes.filter(n => {
+      const lbl = n.label.toLowerCase();
+      return terms.every(t => lbl.includes(t));
+    })
     .sort((a, b) => b.papers - a.papers).slice(0, 25);
   if (!matches.length) {
     resultsDiv.innerHTML = '<div style="color:#888;padding:4px 8px;font-size:12px;">No matches</div>';

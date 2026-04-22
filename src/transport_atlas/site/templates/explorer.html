@@ -277,8 +277,12 @@ fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rows => {
         if (titleOp === 'OR'  && !hits.some(Boolean))  return false;
       }
       if (author) {
-        const a = (row.authors_short || '').toLowerCase();
-        if (!a.includes(author)) return false;
+        // Prefer authors_full (complete lowercase list) — 37% of papers have
+        // their author list truncated with "+N" in authors_short. Tokenize on
+        // whitespace so "Cathy Wu" matches "wu, cathy" or "cathy s wu".
+        const a = (row.authors_full || row.authors_short || '').toLowerCase();
+        const terms = author.split(/\s+/).filter(Boolean);
+        if (!terms.every(t => a.includes(t))) return false;
       }
       return true;
     });

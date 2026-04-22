@@ -706,7 +706,12 @@ const resultsDiv = document.getElementById('results');
 searchInput.addEventListener('input', (e) => {
   const q = e.target.value.trim().toLowerCase();
   if (!q) { resultsDiv.innerHTML = ''; return; }
-  const matches = nodes.filter(n => n.label.toLowerCase().includes(q))
+  // Labels are "last, first" — AND-match tokens so "Cathy Wu" finds "wu, cathy".
+  const terms = q.split(/\s+/).filter(Boolean);
+  const matches = nodes.filter(n => {
+      const lbl = n.label.toLowerCase();
+      return terms.every(t => lbl.includes(t));
+    })
     .sort((a, b) => b.papers - a.papers).slice(0, 25);
   resultsDiv.innerHTML = matches.length
     ? matches.map(n => `<div class="result-item" data-id="${n.id}"><span>${esc(n.label)}</span><span class="count">${n.papers}</span></div>`).join('')

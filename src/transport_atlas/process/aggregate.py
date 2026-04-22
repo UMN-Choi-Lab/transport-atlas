@@ -26,6 +26,20 @@ def _authors_short(author_list) -> str:
     return "; ".join(names[:3]) + f"; +{len(names) - 3}"
 
 
+def _authors_full_lc(author_list) -> str:
+    """Lowercase '; '-joined full author name list. Feeds the explorer author
+    filter so users can find papers where the author is hidden behind the
+    ``+N`` truncation in ``authors_short`` (37% of papers — up to 97 hidden).
+    """
+    try:
+        if author_list is None or len(author_list) == 0:
+            return ""
+    except TypeError:
+        return ""
+    names = [a.get("name") for a in author_list if isinstance(a, dict) and a.get("name")]
+    return "; ".join(n.lower() for n in names)
+
+
 def _venue_stats(papers: pd.DataFrame, venues: list[dict]) -> list[dict]:
     """Per-venue author/collaboration stats (Sun & Rahwan 2017 Table 2).
 
@@ -109,6 +123,7 @@ def run(*, write: bool = True) -> dict:
     explorer = pd.DataFrame({
         "title": papers["title"].fillna(""),
         "authors_short": papers["authors"].map(_authors_short),
+        "authors_full": papers["authors"].map(_authors_full_lc),
         "venue_short": papers["venue_slug"].map(venue_short).fillna(papers["venue_slug"]),
         "year": papers["year"].astype("Int64"),
         "cited_by_count": papers["cited_by_count"].fillna(0).astype(int),

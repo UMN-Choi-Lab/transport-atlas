@@ -415,7 +415,13 @@ fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rawPapers => {
         if (titleOp === 'AND' && !hits.every(Boolean)) continue;
         if (titleOp === 'OR'  && !hits.some(Boolean))  continue;
       }
-      if (author && !(r.authors_short || '').toLowerCase().includes(author)) continue;
+      if (author) {
+        // Use authors_full (complete lowercase list, bypasses "+N" truncation).
+        // Tokenize on whitespace so "Cathy Wu" matches "wu, cathy".
+        const a = (r.authors_full || r.authors_short || '').toLowerCase();
+        const terms = author.split(/\s+/).filter(Boolean);
+        if (!terms.every(t => a.includes(t))) continue;
+      }
       kept.push(r);
     }
     renderAll(kept);
