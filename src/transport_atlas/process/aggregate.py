@@ -15,15 +15,24 @@ log = get_logger("aggregate")
 
 
 def _authors_short(author_list) -> str:
+    """Compact author display for the explorer table.
+
+    - 4 or fewer authors: all shown
+    - 5+ authors: first 3 + '…' + last author (usually the corresponding/senior
+      author in Korean/Asian convention) + '(+N)' hidden-count badge.
+
+    Preserving the last author matters for author-search discoverability — it's
+    the person Korean readers are most likely to look for.
+    """
     try:
         if author_list is None or len(author_list) == 0:
             return ""
     except TypeError:
         return ""
     names = [a.get("name") for a in author_list if isinstance(a, dict) and a.get("name")]
-    if len(names) <= 3:
+    if len(names) <= 4:
         return "; ".join(names)
-    return "; ".join(names[:3]) + f"; +{len(names) - 3}"
+    return "; ".join(names[:3]) + f"; … ; {names[-1]} (+{len(names) - 4})"
 
 
 def _authors_full_lc(author_list) -> str:

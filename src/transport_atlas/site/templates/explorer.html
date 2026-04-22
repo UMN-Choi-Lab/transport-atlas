@@ -221,22 +221,30 @@ fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rows => {
       elStats.yearspan.textContent = '—';
       return;
     }
-    // Authors: rough count via last-name token set (authors_short is "A; B; C; +12")
+    // Unique authors — prefer authors_full (lowercase complete list); fall back
+    // to authors_short with '+N' / '(+N)' / '…' noise stripped out so display
+    // truncation doesn't undercount corresponding/senior authors.
     const names = new Set();
     let citeSum = 0, citeMax = 0, ymin = Infinity, ymax = -Infinity;
+    const cleanup = (s) => s.trim()
+      .replace(/\s*\(\+?\d+\)\s*$/, '')   // strip trailing "(+21)"
+      .replace(/^\+.*$/, '')              // strip "+21"
+      .replace(/^…$/, '');                // strip ellipsis marker
     for (const r of active) {
       citeSum += (r.cited_by_count || 0);
       if (r.cited_by_count > citeMax) citeMax = r.cited_by_count;
       if (r.year < ymin) ymin = r.year;
       if (r.year > ymax) ymax = r.year;
-      if (r.authors_short) {
-        for (const a of r.authors_short.split(';')) {
-          const t = a.trim().replace(/^\+.*$/, '');
+      const src = r.authors_full || r.authors_short || '';
+      if (src) {
+        for (const a of src.split(';')) {
+          const t = cleanup(a);
           if (t) names.add(t);
         }
       }
     }
-    elStats.authors.textContent = fmt(names.size) + (n > 0 ? '⁺' : '');
+    const isExact = active.every(r => r.authors_full);
+    elStats.authors.textContent = fmt(names.size) + (isExact ? '' : '⁺');
     elStats.meancite.textContent = (citeSum / n).toFixed(1);
     elStats.maxcite.textContent = fmt(citeMax);
     elStats.yearspan.textContent = ymin + '–' + ymax;
