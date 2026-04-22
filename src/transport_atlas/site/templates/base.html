@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Transport Atlas{% endblock %}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.5/css/tabulator_simple.min.css">
+<style>
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --accent:#1f6feb; --card:#fff; --border:#e4e4e7; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         margin:0; background:var(--bg); color:var(--fg); }
+  header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 24px; display:flex;
+           align-items:center; gap:24px; position:sticky; top:0; z-index:20; }
+  header h1 { margin:0; font-size:18px; font-weight:700; }
+  header .parent { font-size:11px; color:#888; text-decoration:none; margin-right:8px;
+                   letter-spacing:.3px; }
+  header .parent:hover { color:var(--accent); }
+  nav a { margin-right:16px; color:var(--fg); text-decoration:none; font-size:14px; }
+  nav a.active { color:var(--accent); font-weight:600; }
+  main { padding:24px; max-width:1400px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .card h2 { margin:0 0 8px; font-size:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .stat { font-size:28px; font-weight:700; }
+  footer { text-align:center; color:var(--muted); font-size:12px; padding:24px; }
+  .controls { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .controls label { font-size:13px; color:var(--muted); }
+  button, select, input[type="range"] { font:inherit; padding:6px 10px; border:1px solid var(--border);
+           background:var(--card); border-radius:6px; }
+  button:hover { background:#f1f5f9; cursor:pointer; }
+  #graph-container { width:100%; height:calc(100vh - 220px); background:var(--card); border:1px solid var(--border);
+                     border-radius:8px; position:relative; }
+  .chart-wrap { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .chart-wrap canvas { max-height: 420px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="parent" href="https://choi-seongjin.github.io/">← Choi Lab</a>
+  <h1><a href="index.html" style="color:inherit;text-decoration:none;">🚚 Transport Atlas</a></h1>
+  <nav>
+    <a href="index.html"{% if page == "index" %} class="active"{% endif %}>Home</a>
+    <a href="explorer.html"{% if page == "explorer" %} class="active"{% endif %}>Explorer</a>
+    <a href="by_year.html"{% if page == "by_year" %} class="active"{% endif %}>Papers by Year</a>
+    <a href="coauthor_network.html"{% if page == "coauthor" %} class="active"{% endif %}>Coauthor Network</a>
+  </nav>
+  <span class="muted" style="margin-left:auto">Built {{ build_time }}</span>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  Data: <a href="https://openalex.org/">OpenAlex</a> (CC0) ·
+  <a href="https://www.crossref.org/">Crossref</a> (CC0) ·
+  <a href="https://developer.ieee.org/">IEEE Xplore</a> ·
+  <a href="https://dev.elsevier.com/">Elsevier ScienceDirect</a>
+  <span style="color:#aaa;">(full text used locally for topic modeling, not redistributed)</span>.
+  <br>
+  Source: <a href="https://github.com/UMN-Choi-Lab">UMN-Choi-Lab</a>.
+  Inspired by <a href="https://gisbi-kim.github.io/robopaper-atlas/">robopaper-atlas</a>.
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

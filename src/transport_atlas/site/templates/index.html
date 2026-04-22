@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Transport Atlas — top transportation & ITS research, indexed</title>
+<meta name="description" content="Interactive explorer for papers across the top transportation and ITS journals — TR A-F, IEEE T-ITS / T-IV, Transportation Science, Transportation Research Record, Journal of Transport Geography, Accident Analysis &amp; Prevention, Communications in Transportation Research, and more. Full-text search, coauthor network with multi-metric author rankings (degree, strength, betweenness, PageRank, citations), Leiden communities, and bridge-edge analysis.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Segoe UI","Helvetica Neue",sans-serif;
+         max-width:960px; margin:0 auto; padding:40px 24px;
+         color:#222; background:#fafafa; line-height:1.6; }
+  .parent-link { display:inline-block; font-size:12px; color:#888; text-decoration:none;
+                 letter-spacing:.3px; margin-bottom:8px; }
+  .parent-link:hover { color:#1f77b4; }
+  h1 { font-size:34px; margin:0 0 8px; letter-spacing:-0.5px; }
+  .tagline { color:#666; font-size:16px; margin-bottom:28px; }
+  .badges { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:28px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:4px;
+           font-size:12px; font-weight:600; color:#fff; }
+  .b-tra    { background:#1f77b4; }
+  .b-trb    { background:#ff7f0e; }
+  .b-trc    { background:#2ca02c; }
+  .b-trd    { background:#d62728; }
+  .b-tre    { background:#9467bd; }
+  .b-trf    { background:#8c564b; }
+  .b-tits   { background:#17becf; }
+  .b-tiv    { background:#e377c2; }
+  .b-itsmag { background:#bcbd22; color:#333; }
+  .b-more   { background:#fff; color:#555; border:1px solid #bbb; text-decoration:none; }
+  .b-more:hover { background:#f4f4f4; border-color:#1f77b4; color:#1f77b4; }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+           gap:12px; margin-bottom:32px; }
+  .stat { background:#fff; border:1px solid #e5e5e5; border-radius:8px; padding:14px 16px; }
+  .stat .n { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .l { font-size:11px; color:#888; text-transform:uppercase;
+             letter-spacing:.5px; margin-top:2px; }
+
+  h2 { font-size:20px; margin:40px 0 12px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+  .card { background:#fff; border:1px solid #e5e5e5; border-radius:8px;
+          padding:18px 20px; text-decoration:none; color:inherit;
+          transition:transform .12s, box-shadow .12s, border-color .12s; display:block; }
+  .card:hover { transform:translateY(-2px); border-color:#1f77b4;
+                box-shadow:0 4px 12px rgba(0,0,0,.06); }
+  .card .title { font-size:17px; font-weight:600; margin-bottom:4px; }
+  .card .desc  { font-size:13px; color:#666; }
+  .card .arrow { color:#1f77b4; font-weight:600; font-size:13px; margin-top:8px; }
+  .card.primary { background:linear-gradient(135deg,#eaf3fb 0%,#f6fafd 100%);
+                  border-color:#1f77b4; box-shadow:0 2px 8px rgba(31,119,180,.08); }
+  .card.primary:hover { box-shadow:0 6px 18px rgba(31,119,180,.18); border-color:#155a8a; }
+  .card.primary .title { color:#155a8a; font-size:19px; }
+  .card.primary .title .pill { display:inline-block; font-size:10px; font-weight:700;
+                               padding:2px 8px; margin-left:8px; border-radius:10px;
+                               background:#1f77b4; color:#fff; letter-spacing:.5px;
+                               vertical-align:middle; }
+  .card.primary .arrow { color:#155a8a; }
+
+  .sources { font-size:13px; color:#555; }
+  .sources table { border-collapse:collapse; margin-top:8px; font-size:13px; }
+  .sources th, .sources td { padding:4px 12px 4px 0; text-align:left; }
+  .sources th { color:#888; font-weight:500; font-size:11px;
+                text-transform:uppercase; letter-spacing:.5px; }
+  .sources code { background:#f4f4f4; padding:1px 4px; border-radius:2px; font-size:12px; }
+
+  footer { margin-top:60px; padding-top:20px; border-top:1px solid #e5e5e5;
+           color:#888; font-size:12px; }
+  footer a { color:#666; }
+</style>
+</head>
+<body>
+
+<a class="parent-link" href="https://choi-seongjin.github.io/">← Choi Lab</a>
+<h1>Transport Atlas</h1>
+<div class="tagline">
+  Decades of transportation research, indexed. {{ "{:,}".format(summary.n_papers) }} papers
+  from {{ summary.n_venues }} top-tier transportation and ITS journals — TR A-F, IEEE T-ITS / T-IV,
+  Transportation Science, TRR, Journal of Transport Geography, AAP, Communications in
+  Transportation Research, and more. Full-text searchable, year/venue filterable, and clustered into
+  {{ graph_report.communities }} Leiden coauthor communities. Authors ranked by a suite of
+  network centralities (degree, strength, betweenness, PageRank) alongside citation impact, in
+  the spirit of <a href="https://doi.org/10.1016/j.tra.2017.04.011" style="color:#155a8a;">Sun &amp; Rahwan (2017)</a>.
+</div>
+
+<div class="badges">
+  <span class="badge b-tra">TR-A</span>
+  <span class="badge b-trb">TR-B</span>
+  <span class="badge b-trc">TR-C</span>
+  <span class="badge b-trd">TR-D</span>
+  <span class="badge b-tre">TR-E</span>
+  <span class="badge b-trf">TR-F</span>
+  <span class="badge b-tits">T-ITS</span>
+  <span class="badge b-tiv">T-IV</span>
+  <span class="badge b-itsmag">ITS Mag</span>
+  <a class="badge b-more" href="venues.html"
+     title="Open the venue statistics page for the full list">+ {{ summary.n_venues - 9 }} more →</a>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="n">{{ "{:,}".format(summary.n_papers) }}</div>
+                    <div class="l">Papers (deduped)</div></div>
+  <div class="stat"><div class="n">{{ summary.n_venues }}</div>
+                    <div class="l">Venues</div></div>
+  <div class="stat"><div class="n">{{ summary.year_min }}~{{ summary.year_max }}</div>
+                    <div class="l">Years covered</div></div>
+  <div class="stat"><div class="n">{{ "{:,}".format(graph_report.nodes) }}</div>
+                    <div class="l">Connected authors</div></div>
+  <div class="stat"><div class="n">{{ "{:,}".format(graph_report.edges) }}</div>
+                    <div class="l">Coauthor edges</div></div>
+</div>
+
+<h2>Explore</h2>
+<div class="cards">
+  <a class="card primary" href="explorer.html">
+    <div class="title">Full Explorer <span class="pill">MAIN</span></div>
+    <div class="desc">All {{ "{:,}".format(summary.n_papers) }} papers. Filter by year / venue / min-citations,
+      search title &amp; author, sort any column, paginate.</div>
+    <div class="arrow">Open →</div>
+  </a>
+  <a class="card" href="by_year.html">
+    <div class="title">Papers by Year</div>
+    <div class="desc">Annual paper counts per venue. Stacked, grouped, and line views with per-venue toggles — see how fields have accelerated, which venues dominate each era, and where new outlets broke through.</div>
+    <div class="arrow">Open →</div>
+  </a>
+  <a class="card" href="venues.html">
+    <div class="title">Venue Statistics</div>
+    <div class="desc">Papers, unique authors, team sizes, collaborations and citations per venue — sortable. Tech journals vs. policy journals split the way Sun &amp; Rahwan (2017) found.</div>
+    <div class="arrow">Open →</div>
+  </a>
+  <a class="card" href="coauthor_network.html">
+    <div class="title">Coauthor Network</div>
+    <div class="desc">{{ "{:,}".format(graph_report.nodes) }} researchers · {{ "{:,}".format(graph_report.edges) }} coauthor pairs · {{ graph_report.communities }} Leiden communities with TF-IDF topic labels. Search a name, reveal 1st / 2nd / 3rd degree collaborators, slide a year window, or highlight bridge edges (high edge-betweenness) that stitch communities together.</div>
+    <div class="arrow">Open →</div>
+  </a>
+  <a class="card" href="topic_space.html">
+    <div class="title">Topic Space</div>
+    <div class="desc">SPECTER2 embeddings of every paper, aggregated to the author level and reduced to 2D with UMAP. Click any author to see their top-10 semantic neighbors and their topic trajectory across year-bins.</div>
+    <div class="arrow">Open →</div>
+  </a>
+  <a class="card" href="combined.html">
+    <div class="title">Coauthors × Topics</div>
+    <div class="desc">Coauthor force layout colored by semantic community. Phantom collaborators (semantically close, never coauthored) overlay as amber edges — introductions waiting to happen.</div>
+    <div class="arrow">Open →</div>
+  </a>
+</div>
+
+<h2>Data sources &amp; method</h2>
+<div class="sources">
+  <p>
+    Paper metadata (title, authors, year, DOI, abstracts, citation counts, topic concepts) is harvested from
+    <a href="https://openalex.org/">OpenAlex</a> via ISSN lookup per venue.
+    Journal front-matter (tables of contents, editorials, publication info) is filtered before dedup so
+    it doesn't inflate hubs. Duplicates across sources are collapsed via DOI first,
+    then fuzzy title + year + author-surname overlap.
+  </p>
+  <p>
+    Coauthor communities are detected with Leiden on strong-tie edges (≥ 5 coauthored papers),
+    then label-propagated to weaker fringes and combined with independent islands (≥ 10 members).
+    Topic labels are TF-IDF keywords extracted from the titles of each community's papers.
+  </p>
+  <table>
+    <tr><th>Venue</th><th>Source</th><th>ISSN</th></tr>
+    {% for v in venues %}
+    <tr><td>{{ v.short }}</td><td>OpenAlex</td>
+        <td>{% if v.issns %}<code>{{ v.issns[0] }}</code>{% else %}—{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<footer>
+  Built with Python (OpenAlex API · networkx + leidenalg · scikit-learn TF-IDF · forceatlas2),
+  D3.js canvas for the network, Chart.js, and Tabulator. Last refresh: {{ build_time }}.
+  <br>
+  Data: <a href="https://openalex.org/">OpenAlex</a> (CC0) ·
+  <a href="https://www.crossref.org/">Crossref</a> (CC0) ·
+  <a href="https://developer.ieee.org/">IEEE Xplore</a> ·
+  <a href="https://dev.elsevier.com/">Elsevier ScienceDirect</a>
+  <span style="color:#aaa;">(full text used locally for topic modeling, not redistributed)</span>.
+  <br>
+  Source: <a href="https://github.com/UMN-Choi-Lab">UMN-Choi-Lab</a>.
+  Inspired by <a href="https://gisbi-kim.github.io/robopaper-atlas/">robopaper-atlas</a>.
+  Attribution optional under CC0 — we credit anyway.
+</footer>
+
+</body>
+</html>

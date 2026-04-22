@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Coauthor Network — Transport Atlas</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; font-family:-apple-system,"Segoe UI",sans-serif;
+               background:#0f1117; color:#e5e7eb; overflow:hidden; }
+  canvas { display:block; background:#0f1117; }
+  a { color:#38bdf8; }
+  .panel { position:fixed; background:rgba(17,24,39,0.92); color:#e5e7eb;
+           border:1px solid #374151; border-radius:8px; padding:12px 14px;
+           font-size:12.5px; backdrop-filter:blur(6px); }
+  #info { top:14px; left:14px; max-width:340px; max-height:calc(100vh - 28px); overflow-y:auto; }
+  #info h1 { font-size:15px; margin:0 0 6px; font-weight:600; color:#f3f4f6; }
+  #info .home { display:block; font-size:11px; letter-spacing:.3px; color:#6b7280;
+                text-decoration:none; margin-bottom:4px; }
+  #info .home:hover { color:#38bdf8; }
+  #info .meta { color:#9ca3af; font-size:11px; margin-bottom:8px; line-height:1.6; }
+  #info .meta .count { color:#e5e7eb; font-size:12.5px; font-weight:600; line-height:1.35; }
+  #info .meta .params { color:#6b7280; font-size:10.5px; margin-top:2px; }
+  #info .meta .scope { margin-top:6px; padding-top:6px; border-top:1px solid #2a2f3a;
+                       font-size:10.5px; line-height:1.55; color:#9ca3af; }
+  #info .meta .scope .k { color:#6b7280; margin-right:5px; }
+  #info .controls { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+  #info button, #info select, #info input {
+    font-size:11px; padding:4px 8px; background:#1f2937; color:#e5e7eb;
+    border:1px solid #374151; border-radius:4px; cursor:pointer;
+  }
+  #info button:hover { background:#374151; }
+  #selected { margin-top:10px; padding-top:8px; border-top:1px solid #374151; min-height:28px; }
+  #selected .name { font-weight:600; color:#38bdf8; font-size:13px; }
+  #selected .stat { color:#9ca3af; font-size:11px; margin-top:2px; }
+  #selected .report {
+    display:inline-block; margin-top:6px; padding:3px 8px; font-size:11px;
+    color:#fca5a5; background:#2a1f1f; border:1px solid #4b1f1f;
+    border-radius:4px; text-decoration:none; cursor:pointer;
+  }
+  #selected .report:hover { background:#3a1f1f; color:#fecaca; }
+  #legend .report-link { color:#9ca3af; text-decoration:underline dotted #4b5563;
+    font-size:10.5px; }
+  #legend .report-link:hover { color:#fca5a5; }
+  #search { width:100%; padding:5px 8px; font-size:12px; background:#1f2937;
+            color:#e5e7eb; border:1px solid #374151; border-radius:4px; outline:none; }
+  #search:focus { border-color:#38bdf8; }
+  #results { margin-top:6px; max-height:260px; overflow-y:auto; }
+  .result-item { padding:4px 8px; cursor:pointer; display:flex; justify-content:space-between;
+                 gap:8px; border-radius:3px; font-size:12px; }
+  .result-item:hover { background:#374151; }
+  .result-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; }
+  .result-item.unconn { opacity:.5; }
+  .toggle-small { width:100%; text-align:left; font-size:12px; padding:5px 8px;
+                  background:#1f2937; color:#e5e7eb; border:1px solid #374151;
+                  border-radius:4px; cursor:pointer; }
+  .toggle-small:hover { background:#2d3748; }
+  #hubs-list, #comms-list { max-height:280px; overflow-y:auto; margin-top:4px; }
+  .hub-item { padding:4px 6px; cursor:pointer; display:flex; align-items:baseline;
+              gap:6px; border-radius:3px; font-size:12px; }
+  .hub-item:hover { background:#374151; }
+  .hub-item .rank { color:#6b7280; font-size:10px; min-width:22px; text-align:right; }
+  .hub-item .name { flex:1; }
+  .hub-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; font-size:11px; }
+  .comm-item { padding:5px 6px 5px 8px; cursor:pointer; border-left:3px solid transparent;
+               border-radius:2px; margin-bottom:2px; font-size:11.5px; line-height:1.35; }
+  .comm-item:hover { background:#374151; }
+  .comm-item.sel { background:#1e3a5f; outline:1px solid #38bdf8; }
+  .comm-item .hd { display:flex; align-items:baseline; gap:6px; }
+  .comm-item .name { flex:1; color:#e5e7eb; font-weight:500; }
+  .comm-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; font-size:10.5px; }
+  .comm-item .kw { color:#9ca3af; font-size:10px; margin-top:2px; }
+  #legend { bottom:14px; right:14px; font-size:11px; color:#9ca3af; max-width:440px; }
+  #tooltip { position:fixed; background:#1f2937; color:#e5e7eb; padding:8px 10px;
+             border-radius:4px; font-size:12px; pointer-events:none; display:none; z-index:100;
+             max-width:340px; box-shadow:0 4px 14px rgba(0,0,0,.5); border:1px solid #374151; }
+  #tooltip .tt-name { font-weight:600; color:#f3f4f6; }
+  #tooltip .tt-stat { color:#9ca3af; font-size:11px; margin:2px 0 5px; }
+  #tooltip .tt-top, #tooltip .tt-co, #tooltip .tt-comm {
+    font-size:11px; color:#cbd5e1; line-height:1.55; margin-top:6px; padding-top:6px;
+    border-top:1px solid #374151;
+  }
+  #tooltip .tt-top b { color:#fcd34d; font-weight:500; }
+  #tooltip .tt-top .pap { display:block; margin-left:2px; }
+  #tooltip .tt-top .mc { color:#9ca3af; }
+  #tooltip .tt-co b { color:#38bdf8; font-weight:500; }
+  #tooltip .tt-comm .kw { color:#9ca3af; }
+  .slider-row { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .slider-row input[type=range] { flex:1; }
+  .slider-row .val { font-variant-numeric:tabular-nums; min-width:42px; text-align:right; color:#9ca3af; }
+  .slider-row .lbl { font-size:11px; color:#9ca3af; min-width:92px; }
+  details.forces { margin-top:10px; border-top:1px solid #374151; padding-top:6px; }
+  details.forces > summary { font-size:12px; color:#cbd5e1; cursor:pointer; padding:2px 0;
+                             list-style:none; user-select:none; }
+  details.forces > summary::before { content:'▸ '; color:#6b7280; }
+  details.forces[open] > summary::before { content:'▾ '; }
+  details.forces .group { font-size:10.5px; color:#6b7280; margin-top:8px;
+                          text-transform:uppercase; letter-spacing:.5px; }
+  details.forces .reset { margin-top:8px; font-size:11px; padding:3px 10px;
+                          background:#1f2937; color:#9ca3af; border:1px solid #374151;
+                          border-radius:4px; cursor:pointer; }
+  details.forces .reset:hover { background:#374151; color:#e5e7eb; }
+  .yr-row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .yr-row .label { font-size:11px; color:#9ca3af; }
+  .yr-row .vals { font-size:11px; color:#e5e7eb; font-variant-numeric:tabular-nums; margin-left:auto; }
+  .yr-row .play { background:#1f2937; border:1px solid #374151; color:#e5e7eb;
+    padding:2px 8px; border-radius:4px; cursor:pointer; font-size:11px; }
+  .yr-row .play:hover { background:#374151; }
+  .yr-row .reset { background:#1f2937; border:1px solid #374151; color:#9ca3af;
+    padding:2px 8px; border-radius:4px; cursor:pointer; font-size:11px; }
+  .yr-row .reset:hover { background:#374151; color:#e5e7eb; }
+</style>
+</head>
+<body>
+<canvas id="net"></canvas>
+<div class="panel" id="info">
+  <a href="https://choi-seongjin.github.io/" class="home" style="color:#6b7280;">← Choi Lab</a>
+  <a href="index.html" class="home">← Transport Atlas</a>
+  <h1>Coauthor network</h1>
+  <div class="meta" id="meta-text"></div>
+
+  <div class="slider-row">
+    <span style="font-size:11px;">Edge threshold</span>
+    <input type="range" id="edge-slider" min="1" max="20" value="3">
+    <span class="val" id="edge-val">3</span>
+  </div>
+
+  <div class="yr-row">
+    <span class="label">Year window</span>
+    <span class="vals" id="yr-vals">—</span>
+    <button class="play" id="yr-play" title="Animate a sliding 5-year window">▶ Play</button>
+    <button class="reset" id="yr-reset" title="Full range">⟲</button>
+  </div>
+  <div class="slider-row">
+    <span style="font-size:11px;min-width:30px;">from</span>
+    <input type="range" id="yr-lo" min="1970" max="2026" value="1970">
+    <span class="val" id="yr-lo-val">1970</span>
+  </div>
+  <div class="slider-row">
+    <span style="font-size:11px;min-width:30px;">to</span>
+    <input type="range" id="yr-hi" min="1970" max="2026" value="2026">
+    <span class="val" id="yr-hi-val">2026</span>
+  </div>
+  <div class="slider-row">
+    <span style="font-size:11px;">Layout spread</span>
+    <input type="range" id="sparsity-slider" min="1" max="10" step="0.5" value="5">
+    <span class="val" id="sparsity-val">5</span>
+  </div>
+  <div class="slider-row" style="gap:10px;">
+    <span style="font-size:11px;">Color</span>
+    <label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+      <input type="radio" name="cmode" value="community" checked>community</label>
+    <label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+      <input type="radio" name="cmode" value="year">year</label>
+  </div>
+
+  <div class="controls">
+    <button id="restart">Restart</button>
+    <button id="freeze">Freeze</button>
+    <button id="center">Center</button>
+  </div>
+
+  <details class="forces" title="Live-tune the force simulation. Applies instantly.">
+    <summary>Layout forces</summary>
+
+    <div class="group">Link (coauthor edges)</div>
+    <div class="slider-row"><span class="lbl">base distance</span>
+      <input type="range" id="f-link-base" min="5" max="120" step="1" value="30">
+      <span class="val" id="f-link-base-v">30</span></div>
+    <div class="slider-row"><span class="lbl">weight inverse</span>
+      <input type="range" id="f-link-winv" min="0" max="200" step="1" value="70">
+      <span class="val" id="f-link-winv-v">70</span></div>
+    <div class="slider-row"><span class="lbl">strength</span>
+      <input type="range" id="f-link-str" min="0" max="1" step="0.01" value="0.35">
+      <span class="val" id="f-link-str-v">0.35</span></div>
+
+    <div class="group">Global</div>
+    <div class="slider-row"><span class="lbl">charge base</span>
+      <input type="range" id="f-charge-base" min="-80" max="0" step="1" value="-14">
+      <span class="val" id="f-charge-base-v">-14</span></div>
+    <div class="slider-row"><span class="lbl">center pull</span>
+      <input type="range" id="f-center" min="0" max="0.2" step="0.005" value="0.05">
+      <span class="val" id="f-center-v">0.05</span></div>
+    <div class="slider-row"><span class="lbl">collide pad</span>
+      <input type="range" id="f-collide" min="0" max="12" step="0.5" value="2">
+      <span class="val" id="f-collide-v">2</span></div>
+
+    <div class="group">Community cohesion</div>
+    <div class="slider-row"><span class="lbl">strength</span>
+      <input type="range" id="f-cluster-str" min="0" max="0.4" step="0.01" value="0.08">
+      <span class="val" id="f-cluster-str-v">0.08</span></div>
+
+    <button class="reset" id="f-reset" title="Restore defaults">Reset forces</button>
+  </details>
+
+  <div style="margin-top:10px;">
+    <input type="text" id="search" placeholder="Search author name…" autocomplete="off">
+    <div id="results"></div>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button id="btn-hubs" class="toggle-small">▸ Top 100 hubs (most co-authors)</button>
+    <div id="hubs-list" style="display:none;"></div>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button id="btn-comms" class="toggle-small">▸ Communities</button>
+    <div id="comms-panel" style="display:none;">
+      <div id="comms-summary" style="font-size:11px;color:#9ca3af;margin:6px 0 3px;"></div>
+      <div id="comms-list" style="max-height:260px;overflow-y:auto;margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <div style="margin-top:8px;font-size:12px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" id="show-degrees"> Show 2nd/3rd degree connections
+    </label>
+    <div id="tier-legend" style="display:none;margin-top:4px;font-size:11px;color:#9ca3af;">
+      <span style="color:#34d399;">● 1st</span>
+      <span style="color:#818cf8;margin-left:10px;">● 2nd</span>
+      <span style="color:#f59e0b;margin-left:10px;">● 3rd</span>
+    </div>
+  </div>
+  <div style="margin-top:8px;font-size:12px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;"
+           title="Highlight the collaborations with highest edge-betweenness — the cross-community 'bridges' in the network (Sun & Rahwan 2017)">
+      <input type="checkbox" id="show-bridges"> Highlight bridge edges
+    </label>
+    <div id="bridge-controls" style="display:none;margin-top:4px;">
+      <div class="slider-row">
+        <span style="font-size:11px;">Top</span>
+        <input type="range" id="bridge-slider" min="20" max="500" step="20" value="100">
+        <span class="val" id="bridge-val">100</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="selected"></div>
+</div>
+
+<div class="panel" id="legend">
+  <div id="legend-year" style="display:none;align-items:center;gap:8px;margin-bottom:3px;">
+    <span style="color:#cbd5e1;">Node color = author's most recent year</span>
+    <span id="year-min" style="color:#9ca3af;font-variant-numeric:tabular-nums;">—</span>
+    <canvas id="color-bar" width="140" height="8" style="border-radius:2px;display:block;"></canvas>
+    <span id="year-max" style="color:#9ca3af;font-variant-numeric:tabular-nums;">—</span>
+  </div>
+  <div id="legend-comm" style="color:#cbd5e1;margin-bottom:3px;">
+    Node color = research community · <span id="comm-count" style="color:#e5e7eb;">—</span>
+    communities detected via Leiden · hover a node for topic
+  </div>
+  <div style="color:#9ca3af;">Node size = # papers · Edge thickness = # co-authored papers ·
+    <span style="color:#fbbf24;">● bridge edge</span> = high betweenness (cross-community)</div>
+  <div style="color:#6b7280;margin-top:2px;">
+    Drag to pan · wheel to zoom · click node to pin · drag node to reposition ·
+    <a href="#" id="report-general" class="report-link" target="_blank" rel="noopener">Report data issue</a>
+    <span id="report-general-copy" class="report-link" style="margin-left:6px;cursor:pointer;" title="Copy details to clipboard">📋 copy</span>
+  </div>
+</div>
+<div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:#1f2937;color:#e5e7eb;padding:8px 14px;border-radius:6px;border:1px solid #374151;
+  font-size:12px;z-index:200;display:none;box-shadow:0 4px 12px rgba(0,0,0,.4);"></div>
+
+<div id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-stat" id="tt-stat"></div>
+  <div class="tt-comm" id="tt-comm"></div>
+  <div class="tt-top" id="tt-top"></div>
+  <div class="tt-co" id="tt-co"></div>
+</div>
+
+<script>
+const cacheBust = "{{ cache_bust }}";
+const canvas = document.getElementById('net');
+const ctx = canvas.getContext('2d');
+let width = canvas.width = window.innerWidth;
+let height = canvas.height = window.innerHeight;
+const metaEl = document.getElementById('meta-text');
+metaEl.innerHTML = '<div class="count">Loading…</div><div class="params">fetching coauthor_network.json</div>';
+
+(async function boot() {
+let DATA, SIMILAR = {};
+try {
+  const res = await fetch(`data/coauthor_network.json?v=${cacheBust}`);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  DATA = await res.json();
+  // Optional: semantic neighbors (may not exist yet on first ingest). Fail soft.
+  try {
+    const r2 = await fetch(`data/author_similar.json?v=${cacheBust}`);
+    if (r2.ok) SIMILAR = await r2.json();
+  } catch {}
+} catch (err) {
+  metaEl.innerHTML = '<div class="count" style="color:#f87171;">Failed to load</div>'
+    + '<div class="params">' + (err.message || err) + '</div>';
+  return;
+}
+const META = DATA.meta;
+
+{
+  const venueStr = (META.venues && META.venues.length) ? META.venues.join(' / ') : '—';
+  const yearStr = (META.paper_year_min && META.paper_year_max)
+    ? `${META.paper_year_min}–${META.paper_year_max}` : '—';
+  metaEl.innerHTML =
+    `<div class="count">${META.nodes.toLocaleString()} authors · ${META.edges.toLocaleString()} co-author pairs</div>`
+    + `<div class="params">(≥ ${META.min_author_papers} papers, ≥ ${META.min_edge_collabs} collabs)</div>`
+    + `<div class="scope">`
+    +   `<div><span class="k">Venues</span>${venueStr}</div>`
+    +   `<div><span class="k">Years</span>${yearStr}</div>`
+    +   `<div><span class="k">Built</span>${META.built_at || '—'}</div>`
+    + `</div>`;
+}
+
+const INITIAL_EDGE_THRESHOLD = 3;  // 29-venue corpus has 65% of edges at weight==2 (noise); default to 3+
+const allNodes = DATA.nodes;
+const allEdges = DATA.edges;
+const nodeById = new Map(allNodes.map(n => [n.id, n]));
+
+// Year range derived from edge year lists (fall back to meta if missing).
+// Use an explicit loop — Math.min(...arr) throws RangeError above ~65k args in v8.
+let Y_MIN_CALC = Infinity, Y_MAX_CALC = -Infinity;
+for (const e of allEdges) {
+  if (!e.years) continue;
+  for (const y of e.years) {
+    if (!y) continue;
+    if (y < Y_MIN_CALC) Y_MIN_CALC = y;
+    if (y > Y_MAX_CALC) Y_MAX_CALC = y;
+  }
+}
+const Y_MIN = Number.isFinite(Y_MIN_CALC) ? Y_MIN_CALC : (META.paper_year_min || 1990);
+const Y_MAX = Number.isFinite(Y_MAX_CALC) ? Y_MAX_CALC : (META.paper_year_max || 2026);
+let yLo = Y_MIN, yHi = Y_MAX;
+
+// Count how many collaborations in an edge fall in [yLo, yHi].
+function edgeWindowWeight(e) {
+  if (!e.years || !e.years.length) return e.weight;  // no per-year info → always present
+  let c = 0;
+  for (const y of e.years) if (y >= yLo && y <= yHi) c++;
+  return c;
+}
+
+let edgeThreshold = INITIAL_EDGE_THRESHOLD;
+
+function rebuildFromFilters() {
+  // Start from all edges; keep those with window-weight >= threshold
+  const kept = [];
+  for (const e of allEdges) {
+    const ww = edgeWindowWeight(e);
+    if (ww >= edgeThreshold) kept.push({...e, weight: ww});
+  }
+  edges = kept;
+  edges.forEach(e => { e.source = nodeById.get(e.source); e.target = nodeById.get(e.target); });
+  const used = new Set();
+  edges.forEach(e => { used.add(e.source.id); used.add(e.target.id); });
+  nodes = allNodes.filter(n => used.has(n.id));
+}
+
+let edges, nodes;
+rebuildFromFilters();
+
+let yMin = Infinity, yMax = -Infinity;
+for (const n of nodes) {
+  const y = n.last_year;
+  if (y > 0) { if (y < yMin) yMin = y; if (y > yMax) yMax = y; }
+}
+if (!Number.isFinite(yMin)) { yMin = 2000; yMax = 2026; }
+const colorScale = d3.scaleSequential(d3.interpolateInferno).domain([yMin - 5, yMax]);
+
+const communityPalette = new Map();
+const communityInfo = new Map();
+if (META.communities) {
+  for (const c of META.communities) {
+    communityPalette.set(c.id, c.color);
+    communityInfo.set(c.id, c);
+  }
+  const ccEl = document.getElementById('comm-count');
+  if (ccEl) ccEl.textContent = META.communities.filter(c => !c.misc).length;
+}
+const hasCommunities = communityPalette.size > 0;
+
+let colorMode = hasCommunities ? 'community' : 'year';
+let selectedCommunity = null;
+function nodeColor(n) {
+  if (selectedCommunity != null && n.community !== selectedCommunity) {
+    return 'rgba(100,100,105,0.22)';
+  }
+  if (colorMode === 'community') {
+    return communityPalette.get(n.community) || '#555';
+  }
+  return n.last_year > 0 ? colorScale(n.last_year) : '#888';
+}
+function applyColorMode(mode) {
+  colorMode = mode;
+  const ly = document.getElementById('legend-year');
+  const lc = document.getElementById('legend-comm');
+  if (ly) ly.style.display = (mode === 'year') ? 'flex' : 'none';
+  if (lc) lc.style.display = (mode === 'community' && hasCommunities) ? 'block' : 'none';
+  draw();
+}
+
+(function drawLegend() {
+  const cb = document.getElementById('color-bar');
+  const cbCtx = cb.getContext('2d');
+  const grad = cbCtx.createLinearGradient(0, 0, cb.width, 0);
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20;
+    grad.addColorStop(t, colorScale(yMin - 5 + (yMax - (yMin - 5)) * t));
+  }
+  cbCtx.fillStyle = grad;
+  cbCtx.fillRect(0, 0, cb.width, cb.height);
+  document.getElementById('year-min').textContent = yMin;
+  document.getElementById('year-max').textContent = yMax;
+})();
+
+const rScale = d3.scaleSqrt()
+  .domain([d3.min(nodes, d => d.papers) || 1, d3.max(nodes, d => d.papers) || 10])
+  .range([2, 14]);
+const eScale = d3.scaleLog()
+  .domain([Math.max(1, META.min_edge_collabs), d3.max(edges, d => d.weight) || 10])
+  .range([0.3, 3]);
+
+let adjacency = new Map();
+let nodeDegree = new Map();
+function buildAdjacency() {
+  adjacency.clear(); nodeDegree.clear();
+  for (const n of nodes) { adjacency.set(n, []); nodeDegree.set(n, 0); }
+  for (const e of edges) {
+    adjacency.get(e.source).push(e.target);
+    adjacency.get(e.target).push(e.source);
+    nodeDegree.set(e.source, (nodeDegree.get(e.source) || 0) + 1);
+    nodeDegree.set(e.target, (nodeDegree.get(e.target) || 0) + 1);
+  }
+}
+buildAdjacency();
+
+let showDegrees = false;
+let edgeTier = new Map();
+
+// Bridge-edge filter: highlight top-N edges by edge-betweenness (eb field),
+// matching the cross-community "bridges" concept from Sun & Rahwan 2017.
+let showBridges = false;
+let bridgeTopN = 100;
+let bridgeSet = new Set();  // edge objects above the current cutoff
+function recomputeBridges() {
+  bridgeSet.clear();
+  if (!showBridges) return;
+  // Only consider edges with an eb value (backfilled from 0.0 if absent).
+  const withEb = edges.filter(e => typeof e.eb === 'number' && e.eb > 0);
+  withEb.sort((a, b) => b.eb - a.eb);
+  for (const e of withEb.slice(0, bridgeTopN)) bridgeSet.add(e);
+}
+function recomputeEdgeTiers() {
+  edgeTier.clear();
+  if (!selectedNode) return;
+  const maxHop = showDegrees ? 3 : 1;
+  const dist = new Map(); dist.set(selectedNode, 0);
+  const queue = [selectedNode];
+  while (queue.length) {
+    const n = queue.shift();
+    const d = dist.get(n);
+    if (d >= maxHop) continue;
+    for (const other of (adjacency.get(n) || [])) {
+      if (dist.has(other)) continue;
+      dist.set(other, d + 1); queue.push(other);
+    }
+  }
+  for (const e of edges) {
+    const ds = dist.get(e.source), dt = dist.get(e.target);
+    if (ds === undefined || dt === undefined) continue;
+    const tier = Math.max(ds, dt);
+    if (tier >= 1 && tier <= 3) edgeTier.set(e, tier);
+  }
+}
+
+let sparsity = 5;
+// Force parameters — single source of truth, mutable via the Forces panel.
+const F = {
+  chargeBase: -14, linkBase: 30, linkWinv: 70, linkStr: 0.35,
+  centerStr: 0.05, collidePad: 2, clusterStr: 0.08,
+};
+const F_DEFAULTS = { ...F };
+function linkDistance(d) { return F.linkBase + F.linkWinv / d.weight * Math.sqrt(sparsity); }
+function chargeStrength(d) {
+  const deg = nodeDegree.get(d) || 0;
+  return F.chargeBase * sparsity * (1 + Math.sqrt(deg) * 0.35);
+}
+
+// Seed positions from precomputed FA2 layout (in node.x / node.y already)
+for (const n of nodes) {
+  if (n.x == null) { n.x = (Math.random() - 0.5) * 400; n.y = (Math.random() - 0.5) * 400; }
+}
+
+// Community-cohesion force: each node pulled gently toward its community centroid.
+// Skip misc community (merged tiny islands) so 10k+ grey heterogeneous nodes don't
+// pileup at one centroid.
+const miscCoauthorIds = new Set();
+if (META.communities) for (const c of META.communities) if (c.misc) miscCoauthorIds.add(c.id);
+function communityForce(strength = 0.08) {
+  let nodesRef = null;
+  const centroids = new Map();
+  function f(alpha) {
+    centroids.clear();
+    for (const n of nodesRef) {
+      if (n.community == null || miscCoauthorIds.has(n.community)) continue;
+      const c = centroids.get(n.community) || { x: 0, y: 0, n: 0 };
+      c.x += n.x; c.y += n.y; c.n += 1;
+      centroids.set(n.community, c);
+    }
+    for (const c of centroids.values()) { c.x /= c.n; c.y /= c.n; }
+    for (const n of nodesRef) {
+      if (miscCoauthorIds.has(n.community)) continue;
+      const c = centroids.get(n.community);
+      if (!c) continue;
+      n.vx += (c.x - n.x) * strength * alpha;
+      n.vy += (c.y - n.y) * strength * alpha;
+    }
+  }
+  f.initialize = (n) => { nodesRef = n; };
+  f.strength = (s) => { strength = s; return f; };
+  return f;
+}
+
+let simulation = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(edges).id(d => d.id).distance(linkDistance).strength(F.linkStr))
+  .force('charge', d3.forceManyBody().strength(chargeStrength))
+  .force('center', d3.forceCenter(width / 2, height / 2).strength(F.centerStr))
+  .force('collide', d3.forceCollide().radius(d => rScale(d.papers) + F.collidePad))
+  .force('cluster', communityForce(F.clusterStr))
+  .on('tick', draw)
+  .on('end', () => fitToView());
+
+// ——— Forces panel wiring ———
+function bumpSim() { simulation.alpha(0.3).restart(); }
+function bindF(id, key, fmt, onChange) {
+  const el = document.getElementById(id); if (!el) return;
+  const out = document.getElementById(id + '-v');
+  el.addEventListener('input', () => {
+    F[key] = +el.value;
+    if (out) out.textContent = fmt(F[key]);
+    onChange();
+  });
+}
+const f2 = v => (+v).toFixed(2);
+const f3 = v => (+v).toFixed(3);
+const fi = v => Math.round(+v).toString();
+bindF('f-link-base',   'linkBase',   fi, () => { simulation.force('link').distance(linkDistance); bumpSim(); });
+bindF('f-link-winv',   'linkWinv',   fi, () => { simulation.force('link').distance(linkDistance); bumpSim(); });
+bindF('f-link-str',    'linkStr',    f2, () => { simulation.force('link').strength(F.linkStr); bumpSim(); });
+bindF('f-charge-base', 'chargeBase', fi, () => { simulation.force('charge').strength(chargeStrength); bumpSim(); });
+bindF('f-center',      'centerStr',  f3, () => { simulation.force('center').strength(F.centerStr); bumpSim(); });
+bindF('f-collide',     'collidePad', f2, () => {
+  simulation.force('collide').radius(d => rScale(d.papers) + F.collidePad); bumpSim();
+});
+bindF('f-cluster-str', 'clusterStr', f2, () => { simulation.force('cluster').strength(F.clusterStr); bumpSim(); });
+
+document.getElementById('f-reset').addEventListener('click', () => {
+  Object.assign(F, F_DEFAULTS);
+  const map = [
+    ['f-link-base', F.linkBase, fi], ['f-link-winv', F.linkWinv, fi],
+    ['f-link-str',  F.linkStr,  f2], ['f-charge-base', F.chargeBase, fi],
+    ['f-center',    F.centerStr, f3], ['f-collide', F.collidePad, f2],
+    ['f-cluster-str', F.clusterStr, f2],
+  ];
+  for (const [id, v, fmt] of map) {
+    const el = document.getElementById(id); if (el) el.value = v;
+    const out = document.getElementById(id + '-v'); if (out) out.textContent = fmt(v);
+  }
+  simulation.force('link').distance(linkDistance).strength(F.linkStr);
+  simulation.force('charge').strength(chargeStrength);
+  simulation.force('center').strength(F.centerStr);
+  simulation.force('collide').radius(d => rScale(d.papers) + F.collidePad);
+  simulation.force('cluster').strength(F.clusterStr);
+  bumpSim();
+});
+
+function applySparsity(s) {
+  sparsity = s;
+  simulation.force('charge').strength(chargeStrength);
+  simulation.force('link').distance(linkDistance);
+  simulation.alpha(0.4).restart();
+}
+
+let transform = d3.zoomIdentity;
+const zoom = d3.zoom().scaleExtent([0.02, 8]).on('zoom', (e) => { transform = e.transform; draw(); });
+d3.select(canvas).call(zoom);
+
+function fitToView(pad = 0.9) {
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const n of nodes) {
+    if (n.x < xmin) xmin = n.x; if (n.x > xmax) xmax = n.x;
+    if (n.y < ymin) ymin = n.y; if (n.y > ymax) ymax = n.y;
+  }
+  const w = Math.max(xmax - xmin, 1), h = Math.max(ymax - ymin, 1);
+  const k = Math.min(width / w, height / h) * pad;
+  const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  const tx = width / 2 - cx * k, ty = height / 2 - cy * k;
+  d3.select(canvas).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+}
+setTimeout(() => fitToView(), 1500);
+
+function draw() {
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+
+  ctx.lineCap = 'round';
+  const wMult = Math.max(1, 1 / transform.k);
+  const TIER_STYLE = {
+    1: { color:'#34d399', alpha:1.0,  w:2.4 },
+    2: { color:'#818cf8', alpha:0.85, w:1.5 },
+    3: { color:'#f59e0b', alpha:0.45, w:0.9 },
+  };
+
+  if (!selectedNode && selectedCommunity != null) {
+    ctx.strokeStyle = 'rgba(156,163,175,0.06)';
+    for (const e of edges) {
+      if (e.source.community === selectedCommunity && e.target.community === selectedCommunity) continue;
+      ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * wMult;
+      ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(156,163,175,0.55)';
+    for (const e of edges) {
+      if (!(e.source.community === selectedCommunity && e.target.community === selectedCommunity)) continue;
+      ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * wMult;
+      ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+    }
+  } else if (!selectedNode) {
+    const dimBridges = showBridges && bridgeSet.size > 0;
+    ctx.strokeStyle = dimBridges ? 'rgba(156,163,175,0.08)' : 'rgba(156,163,175,0.35)';
+    for (const e of edges) {
+      if (dimBridges && bridgeSet.has(e)) continue;
+      ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * wMult;
+      ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+    }
+    if (dimBridges) {
+      // Bridges drawn on top in a bright amber — edge-BC magnitude controls width.
+      ctx.strokeStyle = '#fbbf24'; ctx.globalAlpha = 0.95;
+      for (const e of edges) {
+        if (!bridgeSet.has(e)) continue;
+        ctx.beginPath(); ctx.lineWidth = Math.max(1.2, eScale(e.weight)) * wMult * 1.4;
+        ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(156,163,175,0.15)';
+    for (const e of edges) {
+      if (edgeTier.has(e)) continue;
+      ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * wMult;
+      ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+    }
+    for (const tier of [3, 2, 1]) {
+      const s = TIER_STYLE[tier];
+      ctx.globalAlpha = s.alpha; ctx.strokeStyle = s.color;
+      for (const e of edges) {
+        if (edgeTier.get(e) !== tier) continue;
+        ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * s.w * wMult;
+        ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const nodeMult = Math.min(8, Math.pow(Math.max(1 / transform.k, 1), 0.75));
+  for (const n of nodes) {
+    const misc = miscCoauthorIds.has(n.community);
+    ctx.globalAlpha = misc && n !== selectedNode ? 0.22 : 1.0;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, rScale(n.papers) * nodeMult * (misc ? 0.7 : 1.0), 0, Math.PI * 2);
+    ctx.fillStyle = nodeColor(n); ctx.fill();
+    if (n === selectedNode) {
+      ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2 / transform.k; ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1.0;
+
+  if (transform.k > 0.25) {
+    const fontPx = Math.max(9, 11 / transform.k);
+    ctx.font = `${fontPx}px -apple-system,sans-serif`;
+    ctx.fillStyle = 'rgba(229,231,235,0.9)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    let minPapers;
+    if      (transform.k >= 2.0) minPapers = 0;
+    else if (transform.k >= 1.2) minPapers = 8;
+    else if (transform.k >= 0.8) minPapers = 20;
+    else if (transform.k >= 0.5) minPapers = 40;
+    else                         minPapers = 80;
+    for (const n of nodes) {
+      if (n.papers < minPapers && n !== selectedNode) continue;
+      const r = rScale(n.papers) * nodeMult;
+      ctx.fillText(n.label, n.x, n.y + r + 2);
+    }
+  } else if (selectedNode) {
+    ctx.font = `${11 / transform.k}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#38bdf8'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const r = rScale(selectedNode.papers) * nodeMult;
+    ctx.fillText(selectedNode.label, selectedNode.x, selectedNode.y + r + 2);
+  }
+  ctx.restore();
+}
+
+let selectedNode = null;
+
+function nodeAtScreen(sx, sy) {
+  const x = (sx - transform.x) / transform.k;
+  const y = (sy - transform.y) / transform.k;
+  const nodeMult = Math.min(8, Math.pow(Math.max(1 / transform.k, 1), 0.75));
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    const r = rScale(n.papers) * nodeMult + 1.5 / transform.k;
+    if ((n.x - x) ** 2 + (n.y - y) ** 2 < r * r) return n;
+  }
+  return null;
+}
+
+const tipEl = document.getElementById('tooltip');
+const ttName = document.getElementById('tt-name');
+const ttStat = document.getElementById('tt-stat');
+const ttComm = document.getElementById('tt-comm');
+const ttTop = document.getElementById('tt-top');
+const ttCo = document.getElementById('tt-co');
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function collectCoauthors(n) {
+  const co = [];
+  for (const e of edges) {
+    const other = e.source === n ? e.target : (e.target === n ? e.source : null);
+    if (other) co.push({ name: other.label, w: e.weight });
+  }
+  co.sort((a, b) => b.w - a.w);
+  return co;
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const n = nodeAtScreen(e.clientX, e.clientY);
+  if (n) {
+    canvas.style.cursor = 'pointer';
+    ttName.textContent = n.label;
+    ttStat.textContent = `${n.papers} papers · last active ${n.last_year}`;
+    if (n.community != null && communityInfo.has(n.community)) {
+      const ci = communityInfo.get(n.community);
+      const topA = (ci.top_authors || []).slice(0, 3).map(escHtml).join(', ');
+      const words = (ci.label_words || []).map(escHtml).join(' · ');
+      const title = ci.misc ? 'Misc cluster' : `Community ${ci.id}`;
+      const note = ci.misc
+        ? ' <span class="kw">(small labs, &lt; 10 each)</span>'
+        : ` <span class="kw">(${ci.size} members)</span>`;
+      ttComm.innerHTML = `<b style="color:${ci.color}">${title}</b>` + note
+        + (words ? `<br><span class="kw">keywords:</span> ${words}` : '')
+        + (topA ? `<br><span class="kw">hubs:</span> ${topA}` : '');
+      ttComm.style.display = '';
+    } else { ttComm.style.display = 'none'; }
+    if (n.top && n.top.length) {
+      ttTop.innerHTML = '<b>Top cited papers:</b>'
+        + n.top.map(p => `<span class="pap">• ${escHtml(p.t)} <span class="mc">(${p.y}, ${p.c.toLocaleString()} cites)</span></span>`).join('');
+      ttTop.style.display = '';
+    } else { ttTop.style.display = 'none'; }
+    const co = collectCoauthors(n);
+    if (co.length) {
+      const top = co.slice(0, 10);
+      ttCo.innerHTML = `<b>Co-authors (${co.length}):</b> `
+        + top.map(c => `${escHtml(c.name)} (${c.w})`).join(', ')
+        + (co.length > 10 ? `, … +${co.length - 10} more` : '');
+      ttCo.style.display = '';
+    } else { ttCo.style.display = 'none'; }
+    let x = e.clientX + 12, y = e.clientY + 12;
+    const w = tipEl.offsetWidth || 320, h = tipEl.offsetHeight || 80;
+    if (x + w > window.innerWidth - 8)  x = e.clientX - w - 12;
+    if (y + h > window.innerHeight - 8) y = e.clientY - h - 12;
+    tipEl.style.left = x + 'px'; tipEl.style.top = y + 'px';
+    tipEl.style.display = 'block';
+  } else {
+    canvas.style.cursor = 'grab';
+    tipEl.style.display = 'none';
+  }
+});
+canvas.addEventListener('mouseleave', () => { tipEl.style.display = 'none'; });
+
+const REPORT_EMAIL = "chois@umn.edu";
+const REPORT_REPO = "UMN-Choi-Lab/transportation";
+
+function reportBodyForNode(node) {
+  const atlasUrl = `${window.location.origin}${window.location.pathname}`;
+  return [
+    `Node: ${node ? node.label : '(click a node)'}`,
+    `Internal id: ${node ? node.id : ''}`,
+    `Papers in atlas: ${node ? node.papers : ''}`,
+    `Last active: ${node ? node.last_year : ''}`,
+    `Community: ${node ? node.community : ''}`,
+    `Atlas page: ${atlasUrl}`,
+    `Window: ${yLo}-${yHi}`,
+    ``,
+    `--- Describe the issue ---`,
+    `Common cases:`,
+    `  • Papers listed under this node that aren't mine`,
+    `  • My papers missing from this node`,
+    `  • I'm split across multiple nodes (list the other names)`,
+    `  • Wrong co-authors`,
+    ``,
+    `Prefer GitHub? open an issue at https://github.com/${REPORT_REPO}/issues/new`,
+  ].join("\n");
+}
+function reportBodyGeneral() {
+  const atlasUrl = `${window.location.origin}${window.location.pathname}`;
+  return [
+    `Atlas page: ${atlasUrl}`,
+    `Window: ${yLo}-${yHi}`,
+    ``,
+    `--- Describe the issue ---`,
+    `(e.g. missing venue, duplicated author, weird cluster, wrong year, etc.)`,
+    ``,
+    `Prefer GitHub? open an issue at https://github.com/${REPORT_REPO}/issues/new`,
+  ].join("\n");
+}
+
+function showToast(msg, ms = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._hide);
+  t._hide = setTimeout(() => { t.style.display = 'none'; }, ms);
+}
+
+async function copyText(text, okMsg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(okMsg || 'Copied to clipboard');
+  } catch {
+    // Fallback: textarea + execCommand (legacy)
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); showToast(okMsg || 'Copied'); }
+    catch { showToast('Copy failed — please select and copy manually'); }
+    finally { document.body.removeChild(ta); }
+  }
+}
+
+function updateSelectedPanel(n) {
+  const box = document.getElementById('selected');
+  if (!n) { box.innerHTML = ''; return; }
+  const neighbors = edges.filter(x => x.source === n || x.target === n).length;
+  const subj = encodeURIComponent(`Transport Atlas: wrong attribution for "${n.label}"`);
+  const body = encodeURIComponent(reportBodyForNode(n));
+  let html = `<div class="name">${escHtml(n.label)}</div>`
+    + `<div class="stat">${n.papers} papers · ${neighbors} co-authors in view · last ${n.last_year}</div>`;
+  const sims = SIMILAR[String(n.id)] || [];
+  if (sims.length) {
+    const shown = sims.slice(0, 8);
+    const nPhantom = shown.filter(s => s.phantom).length;
+    html += `<div style="margin-top:8px;color:#9ca3af;font-size:11px;">`
+          + `Semantic neighbors`
+          + (nPhantom ? ` · <span style="color:#fbbf24;">${nPhantom} phantom ⚡</span>` : '')
+          + ` (<a href="topic_space.html" style="color:#38bdf8;">open in topic space</a>):</div>`
+          + `<div id="similar-list" style="margin-top:3px;">`;
+    for (const s of shown) {
+      const dStr = (s.d != null) ? `${s.d} hop${s.d === 1 ? '' : 's'}` : '≥4 / disconnected';
+      const phantom = s.phantom
+        ? ' <span title="Semantic match but ≥3 hops away in the coauthor graph — likely collaborator who has not yet coauthored" style="color:#fbbf24;">⚡</span>'
+        : '';
+      html += `<div class="sim-item" data-sid="${s.id}" `
+            + `title="coauthor distance: ${dStr}" `
+            + `style="padding:3px 6px;cursor:pointer;display:flex;justify-content:space-between;`
+            + `gap:8px;border-radius:3px;font-size:11.5px;">`
+            + `<span style="flex:1;">${escHtml(s.name)}${phantom}</span>`
+            + `<span style="color:#9ca3af;font-size:10.5px;">${(s.sim*100).toFixed(0)}%</span></div>`;
+    }
+    html += '</div>';
+  }
+  html += `<a class="report" href="mailto:${REPORT_EMAIL}?subject=${subj}&body=${body}" target="_blank" rel="noopener" title="Open email">🚩 Report</a>`
+        + ` <span class="report" id="report-node-copy" style="cursor:pointer;" title="Copy details">📋 copy</span>`
+        + ` <a class="report" href="https://github.com/${REPORT_REPO}/issues/new?title=${subj}&body=${body}" target="_blank" rel="noopener" title="Open GitHub issue">↗ GitHub</a>`;
+  box.innerHTML = html;
+  document.getElementById('report-node-copy').addEventListener('click', () =>
+    copyText(reportBodyForNode(n), 'Node details copied — paste into email or GitHub'));
+  // Clicking a semantic neighbor centers on that node
+  box.querySelectorAll('.sim-item').forEach(el => el.addEventListener('click', () => {
+    const target = nodes.find(x => x.id === +el.dataset.sid)
+                   || allNodes.find(x => x.id === +el.dataset.sid);
+    if (target) centerOnNode(target);
+  }));
+  box.querySelectorAll('.sim-item').forEach(el => {
+    el.addEventListener('mouseenter', () => el.style.background = '#374151');
+    el.addEventListener('mouseleave', () => el.style.background = '');
+  });
+}
+
+// Keep the general "Report data issue" link's href fresh (so it picks up the current year window).
+const reportGeneralEl = document.getElementById('report-general');
+function refreshReportGeneral() {
+  const subj = encodeURIComponent('Transport Atlas: data issue');
+  const body = encodeURIComponent(reportBodyGeneral());
+  reportGeneralEl.href = `mailto:${REPORT_EMAIL}?subject=${subj}&body=${body}`;
+}
+refreshReportGeneral();
+reportGeneralEl.addEventListener('mouseenter', refreshReportGeneral);
+reportGeneralEl.addEventListener('click', refreshReportGeneral);  // href is fresh before nav
+document.getElementById('report-general-copy').addEventListener('click', () =>
+  copyText(reportBodyGeneral(), 'Details copied — paste into email or GitHub'));
+function centerOnNode(n, scale = 1.8) {
+  selectedNode = n;
+  updateSelectedPanel(n);
+  recomputeEdgeTiers();
+  const tx = width / 2 - n.x * scale;
+  const ty = height / 2 - n.y * scale;
+  d3.select(canvas).transition().duration(500)
+    .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+canvas.addEventListener('click', (e) => {
+  const n = nodeAtScreen(e.clientX, e.clientY);
+  selectedNode = n;
+  if (selectedCommunity != null) {
+    selectedCommunity = null;
+    if (commsList) commsList.querySelectorAll('.comm-item.sel').forEach(el => el.classList.remove('sel'));
+  }
+  updateSelectedPanel(n);
+  recomputeEdgeTiers();
+  draw();
+});
+
+// Search
+const searchInput = document.getElementById('search');
+const resultsDiv = document.getElementById('results');
+searchInput.addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { resultsDiv.innerHTML = ''; return; }
+  const visibleIds = new Set(nodes.map(n => n.id));
+  const matches = allNodes.filter(n => n.label.toLowerCase().includes(q))
+    .sort((a, b) => b.papers - a.papers).slice(0, 25);
+  if (!matches.length) {
+    resultsDiv.innerHTML = '<div style="color:#888;padding:4px 8px;font-size:12px;">No matches</div>';
+    return;
+  }
+  resultsDiv.innerHTML = matches.map(n => {
+    const cls = visibleIds.has(n.id) ? 'result-item' : 'result-item unconn';
+    const title = visibleIds.has(n.id) ? '' : ' title="Not in current view — lower edge threshold"';
+    return `<div class="${cls}" data-id="${n.id}"${title}>`
+      + `<span>${escHtml(n.label)}</span><span class="count">${n.papers}</span></div>`;
+  }).join('');
+});
+searchInput.addEventListener('keyup', (e) => {
+  if (e.key === 'Enter') {
+    const first = resultsDiv.querySelector('.result-item');
+    if (first) first.click();
+  }
+});
+resultsDiv.addEventListener('click', (e) => {
+  const item = e.target.closest('.result-item');
+  if (!item) return;
+  const id = parseInt(item.dataset.id);
+  const node = nodes.find(n => n.id === id);
+  if (node) centerOnNode(node);
+});
+
+// Hubs
+const btnHubs = document.getElementById('btn-hubs');
+const hubsList = document.getElementById('hubs-list');
+function populateHubs() {
+  const degree = new Map(), weighted = new Map();
+  for (const n of nodes) { degree.set(n.id, 0); weighted.set(n.id, 0); }
+  for (const e of edges) {
+    degree.set(e.source.id, degree.get(e.source.id) + 1);
+    degree.set(e.target.id, degree.get(e.target.id) + 1);
+    weighted.set(e.source.id, weighted.get(e.source.id) + e.weight);
+    weighted.set(e.target.id, weighted.get(e.target.id) + e.weight);
+  }
+  const ranked = nodes.slice().sort((a, b) => degree.get(b.id) - degree.get(a.id)).slice(0, 100);
+  hubsList.innerHTML = ranked.map((n, i) =>
+    `<div class="hub-item" data-id="${n.id}" title="${weighted.get(n.id)} total collaborations">`
+    + `<span class="rank">${i + 1}</span>`
+    + `<span class="name">${escHtml(n.label)}</span>`
+    + `<span class="count">${degree.get(n.id)}</span></div>`
+  ).join('');
+}
+btnHubs.addEventListener('click', () => {
+  const show = hubsList.style.display === 'none';
+  if (show) { populateHubs(); hubsList.style.display = 'block';
+              btnHubs.textContent = '▾ Top 100 hubs (most co-authors)'; }
+  else { hubsList.style.display = 'none';
+         btnHubs.textContent = '▸ Top 100 hubs (most co-authors)'; }
+});
+hubsList.addEventListener('click', (e) => {
+  const item = e.target.closest('.hub-item');
+  if (!item) return;
+  const id = parseInt(item.dataset.id);
+  const node = nodes.find(n => n.id === id);
+  if (node) centerOnNode(node);
+});
+
+// Communities
+const btnComms = document.getElementById('btn-comms');
+const commsPanel = document.getElementById('comms-panel');
+const commsList = document.getElementById('comms-list');
+const commsSummary = document.getElementById('comms-summary');
+const commsBaseLabel = `Communities${META.communities ? ' (' + META.communities.filter(c => !c.misc).length + ')' : ''}`;
+btnComms.textContent = '▸ ' + commsBaseLabel;
+
+function populateComms() {
+  const named = (META.communities || []).filter(c => !c.misc);
+  const sizes = named.map(c => c.size).sort((a, b) => a - b);
+  const med = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
+  const miscC = (META.communities || []).find(c => c.misc);
+  commsSummary.innerHTML =
+    `${named.length} communities · sizes ${sizes[0] || 0}–${sizes[sizes.length - 1] || 0}`
+    + ` · median ${med}`
+    + (miscC ? ` · +${miscC.size.toLocaleString()} in misc` : '')
+    + `<div style="color:#6b7280;font-size:10px;margin-top:3px;">counts = visible / total. Lower edge threshold to reveal more.</div>`;
+
+  const visibleByComm = new Map();
+  for (const n of nodes) {
+    if (n.community != null) {
+      visibleByComm.set(n.community, (visibleByComm.get(n.community) || 0) + 1);
+    }
+  }
+
+  const rows = [];
+  (META.communities || []).forEach((c) => {
+    const hub = (c.top_authors && c.top_authors[0]) || '—';
+    const title = c.misc ? 'Misc cluster' : `#${c.id} · ${hub}`;
+    const kw = (c.label_words || []).slice(0, 4).join(' · ');
+    const note = c.misc
+      ? '<div class="kw">many small labs, &lt; 10 members each</div>'
+      : (kw ? `<div class="kw">${escHtml(kw)}</div>` : '');
+    const selCls = (selectedCommunity === c.id) ? ' sel' : '';
+    const vis = visibleByComm.get(c.id) || 0;
+    rows.push(
+      `<div class="comm-item${selCls}" data-cid="${c.id}" style="border-left-color:${c.color};">`
+      + `<div class="hd"><span class="name">${escHtml(title)}</span>`
+      + `<span class="count">${vis.toLocaleString()} / ${c.size.toLocaleString()}</span></div>`
+      + note + `</div>`
+    );
+  });
+  commsList.innerHTML = rows.join('');
+}
+
+btnComms.addEventListener('click', () => {
+  const show = commsPanel.style.display === 'none';
+  if (show) { populateComms(); commsPanel.style.display = 'block';
+              btnComms.textContent = '▾ ' + commsBaseLabel; }
+  else { commsPanel.style.display = 'none'; btnComms.textContent = '▸ ' + commsBaseLabel; }
+});
+
+commsList.addEventListener('click', (e) => {
+  const item = e.target.closest('.comm-item');
+  if (!item) return;
+  const rawCid = item.dataset.cid;
+  const cid = rawCid === 'misc' ? 'misc' : parseInt(rawCid);
+  if (selectedCommunity === cid) {
+    selectedCommunity = null;
+    item.classList.remove('sel');
+    selectedNode = null; updateSelectedPanel(null);
+    edgeTier.clear(); draw(); return;
+  }
+  selectedCommunity = cid;
+  commsList.querySelectorAll('.comm-item.sel').forEach(el => el.classList.remove('sel'));
+  item.classList.add('sel');
+  const c = communityInfo.get(cid);
+  const hubLabel = c && c.top_authors && c.top_authors[0];
+  const target = hubLabel ? nodes.find(n => n.label === hubLabel) : null;
+  selectedNode = null; updateSelectedPanel(null); edgeTier.clear();
+  if (target) {
+    const scale = 1.8;
+    const tx = width / 2 - target.x * scale;
+    const ty = height / 2 - target.y * scale;
+    d3.select(canvas).transition().duration(500)
+      .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+  }
+  draw();
+});
+
+// Drag nodes
+d3.select(canvas).call(d3.drag()
+  .container(canvas)
+  .subject((event) => nodeAtScreen(event.sourceEvent.clientX, event.sourceEvent.clientY))
+  .filter((event) => nodeAtScreen(event.clientX, event.clientY))
+  .on('start', (event) => { if (!event.active) simulation.alphaTarget(0.3).restart();
+                             event.subject.fx = event.subject.x; event.subject.fy = event.subject.y; })
+  .on('drag',  (event) => { event.subject.fx = (event.x - transform.x) / transform.k;
+                             event.subject.fy = (event.y - transform.y) / transform.k; })
+  .on('end',   (event) => { if (!event.active) simulation.alphaTarget(0);
+                             event.subject.fx = null; event.subject.fy = null; })
+);
+
+// Buttons
+const INITIAL_SPARSITY = 5;
+let frozen = false;
+function fullReset() {
+  selectedNode = null; selectedCommunity = null; frozen = false;
+  showDegrees = false;
+  document.getElementById('show-degrees').checked = false;
+  document.getElementById('tier-legend').style.display = 'none';
+  document.getElementById('selected').innerHTML = '';
+  edgeTier.clear();
+  showBridges = false; bridgeCheckbox.checked = false;
+  bridgeControls.style.display = 'none'; bridgeSet.clear();
+  searchInput.value = ''; resultsDiv.innerHTML = '';
+  hubsList.style.display = 'none'; btnHubs.textContent = '▸ Top 100 hubs (most co-authors)';
+  slider.value = INITIAL_EDGE_THRESHOLD; sliderVal.textContent = INITIAL_EDGE_THRESHOLD;
+  edgeThreshold = INITIAL_EDGE_THRESHOLD;
+  sparsitySlider.value = INITIAL_SPARSITY; sparsityVal.textContent = INITIAL_SPARSITY;
+  sparsity = INITIAL_SPARSITY;
+  // Reset year window
+  yLo = Y_MIN; yHi = Y_MAX;
+  yrLo.value = Y_MIN; yrHi.value = Y_MAX;
+  syncYrUI();
+  if (yrPlayTimer) { clearInterval(yrPlayTimer); yrPlayTimer = null; yrPlayBtn.textContent = '▶ Play'; }
+  rebuildFromFilters();
+  for (const n of nodes) {
+    n.fx = null; n.fy = null;
+    n.x = width / 2 + (Math.random() - 0.5) * 200;
+    n.y = height / 2 + (Math.random() - 0.5) * 200;
+    n.vx = 0; n.vy = 0;
+  }
+  buildAdjacency();
+  simulation.nodes(nodes);
+  simulation.force('link').links(edges).distance(linkDistance);
+  simulation.force('charge').strength(chargeStrength);
+  simulation.force('center', d3.forceCenter(width / 2, height / 2));
+  simulation.alpha(1).restart();
+  d3.select(canvas).transition().duration(450).call(zoom.transform, d3.zoomIdentity);
+  document.getElementById('freeze').textContent = 'Freeze';
+}
+document.getElementById('restart').onclick = fullReset;
+document.getElementById('freeze').onclick = () => {
+  frozen = !frozen;
+  if (frozen) { simulation.stop(); document.getElementById('freeze').textContent = 'Resume'; }
+  else { simulation.alpha(0.3).restart(); document.getElementById('freeze').textContent = 'Freeze'; }
+};
+document.getElementById('center').onclick = () => {
+  d3.select(canvas).transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+};
+
+// Applies all current filters (edge threshold + year window) and restarts the simulation.
+function applyFilters() {
+  rebuildFromFilters();
+  simulation.nodes(nodes); simulation.force('link').links(edges);
+  simulation.alpha(0.4).restart();
+  buildAdjacency(); recomputeEdgeTiers(); recomputeBridges();
+  if (hubsList.style.display === 'block') populateHubs();
+  if (commsPanel.style.display !== 'none') populateComms();
+}
+
+// Edge-weight slider
+const slider = document.getElementById('edge-slider');
+const sliderVal = document.getElementById('edge-val');
+slider.oninput = (e) => {
+  edgeThreshold = parseInt(e.target.value);
+  sliderVal.textContent = edgeThreshold;
+  applyFilters();
+};
+
+// Year-window sliders (two separate inputs, clamped so lo<=hi)
+const yrLo = document.getElementById('yr-lo');
+const yrHi = document.getElementById('yr-hi');
+const yrLoVal = document.getElementById('yr-lo-val');
+const yrHiVal = document.getElementById('yr-hi-val');
+const yrVals = document.getElementById('yr-vals');
+yrLo.min = yrHi.min = Y_MIN;
+yrLo.max = yrHi.max = Y_MAX;
+yrLo.value = Y_MIN; yrHi.value = Y_MAX;
+yrLoVal.textContent = Y_MIN;
+yrHiVal.textContent = Y_MAX;
+
+function syncYrUI() {
+  yrLoVal.textContent = yLo;
+  yrHiVal.textContent = yHi;
+  yrVals.textContent = (yLo === yHi) ? `${yLo}` : `${yLo}–${yHi}`;
+}
+
+yrLo.addEventListener('input', () => {
+  let lo = parseInt(yrLo.value);
+  if (lo > yHi) { yHi = lo; yrHi.value = lo; }
+  yLo = lo;
+  syncYrUI();
+  applyFilters();
+});
+yrHi.addEventListener('input', () => {
+  let hi = parseInt(yrHi.value);
+  if (hi < yLo) { yLo = hi; yrLo.value = hi; }
+  yHi = hi;
+  syncYrUI();
+  applyFilters();
+});
+document.getElementById('yr-reset').addEventListener('click', () => {
+  yLo = Y_MIN; yHi = Y_MAX; yrLo.value = Y_MIN; yrHi.value = Y_MAX;
+  syncYrUI(); applyFilters();
+});
+syncYrUI();
+
+// Animate: sliding 5-year window from Y_MIN to Y_MAX
+let yrPlayTimer = null;
+const yrPlayBtn = document.getElementById('yr-play');
+yrPlayBtn.addEventListener('click', () => {
+  if (yrPlayTimer) {
+    clearInterval(yrPlayTimer); yrPlayTimer = null;
+    yrPlayBtn.textContent = '▶ Play'; return;
+  }
+  const WIN = 5;
+  let start = Y_MIN;
+  const step = () => {
+    const lo = start, hi = Math.min(Y_MAX, start + WIN - 1);
+    yrLo.value = lo; yrHi.value = hi; yLo = lo; yHi = hi;
+    syncYrUI(); applyFilters();
+    start += 1;
+    if (start + WIN - 1 > Y_MAX) {
+      clearInterval(yrPlayTimer); yrPlayTimer = null; yrPlayBtn.textContent = '▶ Play';
+    }
+  };
+  step();
+  yrPlayTimer = setInterval(step, 900);
+  yrPlayBtn.textContent = '⏸ Pause';
+});
+
+document.getElementById('show-degrees').addEventListener('change', (e) => {
+  showDegrees = e.target.checked;
+  document.getElementById('tier-legend').style.display = showDegrees ? 'block' : 'none';
+  recomputeEdgeTiers(); draw();
+});
+
+// Bridge edges
+const bridgeCheckbox = document.getElementById('show-bridges');
+const bridgeControls = document.getElementById('bridge-controls');
+const bridgeSlider = document.getElementById('bridge-slider');
+const bridgeValLbl = document.getElementById('bridge-val');
+bridgeCheckbox.addEventListener('change', (e) => {
+  showBridges = e.target.checked;
+  bridgeControls.style.display = showBridges ? 'block' : 'none';
+  recomputeBridges(); draw();
+});
+bridgeSlider.addEventListener('input', (e) => {
+  bridgeTopN = parseInt(e.target.value);
+  bridgeValLbl.textContent = bridgeTopN;
+  recomputeBridges(); draw();
+});
+
+const sparsitySlider = document.getElementById('sparsity-slider');
+const sparsityVal = document.getElementById('sparsity-val');
+sparsitySlider.oninput = (e) => {
+  const s = parseFloat(e.target.value);
+  sparsityVal.textContent = s; applySparsity(s);
+};
+
+window.addEventListener('resize', () => {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+  simulation.force('center', d3.forceCenter(width / 2, height / 2));
+  simulation.alpha(0.3).restart();
+});
+
+document.querySelectorAll('input[name="cmode"]').forEach(r => {
+  r.checked = (r.value === colorMode);
+  r.addEventListener('change', (e) => { if (e.target.checked) applyColorMode(e.target.value); });
+});
+applyColorMode(colorMode);
+})();
+</script>
+</body>
+</html>

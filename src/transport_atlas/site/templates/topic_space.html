@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Topic Space — Transport Atlas</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; height:100%; font-family:-apple-system,"Segoe UI",sans-serif;
+               background:#0f1117; color:#e5e7eb; overflow:hidden; }
+  canvas { display:block; background:#0f1117; }
+  a { color:#38bdf8; }
+  .panel { position:fixed; background:rgba(17,24,39,0.92); color:#e5e7eb;
+           border:1px solid #374151; border-radius:8px; padding:12px 14px;
+           font-size:12.5px; backdrop-filter:blur(6px); }
+  #info { top:14px; left:14px; max-width:340px; max-height:calc(100vh - 28px); overflow-y:auto; }
+  #info h1 { font-size:15px; margin:0 0 6px; font-weight:600; color:#f3f4f6; }
+  #info .home { display:block; font-size:11px; letter-spacing:.3px; color:#6b7280;
+                text-decoration:none; margin-bottom:4px; }
+  #info .home:hover { color:#38bdf8; }
+  #info .meta { color:#9ca3af; font-size:11px; margin-bottom:8px; line-height:1.6; }
+  #info .meta .count { color:#e5e7eb; font-size:12.5px; font-weight:600; line-height:1.35; }
+  #info .meta .params { color:#6b7280; font-size:10.5px; margin-top:2px; }
+  #info button, #info select, #info input {
+    font-size:11px; padding:4px 8px; background:#1f2937; color:#e5e7eb;
+    border:1px solid #374151; border-radius:4px; cursor:pointer;
+  }
+  #info button:hover { background:#374151; }
+  #search { width:100%; padding:5px 8px; font-size:12px; background:#1f2937;
+            color:#e5e7eb; border:1px solid #374151; border-radius:4px; outline:none; }
+  #search:focus { border-color:#38bdf8; }
+  #results { margin-top:6px; max-height:220px; overflow-y:auto; }
+  .result-item { padding:4px 8px; cursor:pointer; display:flex; justify-content:space-between;
+                 gap:8px; border-radius:3px; font-size:12px; }
+  .result-item:hover { background:#374151; }
+  .result-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; }
+  .toggle-small { width:100%; text-align:left; font-size:12px; padding:5px 8px;
+                  background:#1f2937; color:#e5e7eb; border:1px solid #374151;
+                  border-radius:4px; cursor:pointer; }
+  .toggle-small:hover { background:#2d3748; }
+  #hubs-list, #comms-list { max-height:280px; overflow-y:auto; margin-top:4px; }
+  .hub-item { padding:4px 6px; cursor:pointer; display:flex; align-items:baseline;
+              gap:6px; border-radius:3px; font-size:12px; }
+  .hub-item:hover { background:#374151; }
+  .hub-item .rank { color:#6b7280; font-size:10px; min-width:22px; text-align:right; }
+  .hub-item .name { flex:1; }
+  .hub-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; font-size:11px; }
+  .comm-item { padding:5px 6px 5px 8px; cursor:pointer; border-left:3px solid transparent;
+               border-radius:2px; margin-bottom:2px; font-size:11.5px; line-height:1.35; }
+  .comm-item:hover { background:#374151; }
+  .comm-item.sel { background:#1e3a5f; outline:1px solid #38bdf8; }
+  .comm-item .hd { display:flex; align-items:baseline; gap:6px; }
+  .comm-item .name { flex:1; color:#e5e7eb; font-weight:500; }
+  .comm-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; font-size:10.5px; }
+  .comm-item .kw { color:#9ca3af; font-size:10px; margin-top:2px; }
+  #selected { margin-top:10px; padding-top:8px; border-top:1px solid #374151; min-height:28px; }
+  #selected .name { font-weight:600; color:#38bdf8; font-size:13px; }
+  #selected .stat { color:#9ca3af; font-size:11px; margin-top:2px; }
+  #selected .report {
+    display:inline-block; margin-top:6px; padding:3px 8px; font-size:11px;
+    color:#fca5a5; background:#2a1f1f; border:1px solid #4b1f1f;
+    border-radius:4px; text-decoration:none; cursor:pointer;
+  }
+  #selected .report:hover { background:#3a1f1f; color:#fecaca; }
+  #similar-list { margin-top:4px; }
+  .sim-item { padding:3px 6px; cursor:pointer; display:flex; justify-content:space-between;
+              gap:8px; border-radius:3px; font-size:11.5px; line-height:1.3; }
+  .sim-item:hover { background:#374151; }
+  .sim-item .name { flex:1; color:#e5e7eb; }
+  .sim-item .sim  { color:#9ca3af; font-variant-numeric:tabular-nums; font-size:10.5px; }
+  #legend { bottom:14px; right:14px; font-size:11px; color:#9ca3af; max-width:460px; }
+  #legend .report-link { color:#9ca3af; text-decoration:underline dotted #4b5563;
+    font-size:10.5px; }
+  #legend .report-link:hover { color:#fca5a5; }
+  #tooltip { position:fixed; background:#1f2937; color:#e5e7eb; padding:8px 10px;
+             border-radius:4px; font-size:12px; pointer-events:none; display:none; z-index:100;
+             max-width:320px; box-shadow:0 4px 14px rgba(0,0,0,.5); border:1px solid #374151; }
+  #tooltip .tt-name { font-weight:600; color:#f3f4f6; }
+  #tooltip .tt-stat { color:#9ca3af; font-size:11px; margin:2px 0 5px; }
+  #tooltip .tt-comm, #tooltip .tt-nbr {
+    font-size:11px; color:#cbd5e1; line-height:1.55; margin-top:6px; padding-top:6px;
+    border-top:1px solid #374151;
+  }
+  #tooltip .tt-comm b { color:#fcd34d; font-weight:500; }
+  #tooltip .tt-comm .kw { color:#9ca3af; }
+  #tooltip .tt-nbr b { color:#38bdf8; font-weight:500; }
+  .radio-row { display:flex; gap:10px; margin-top:6px; font-size:11px; color:#9ca3af; }
+  .radio-row label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+  .toggle { display:inline-flex; align-items:center; gap:6px; font-size:11px;
+            color:#9ca3af; cursor:pointer; margin-top:6px; }
+  .slider-row { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .slider-row input[type=range] { flex:1; }
+  .slider-row .val { font-variant-numeric:tabular-nums; min-width:42px; text-align:right; color:#9ca3af; font-size:11px; }
+  .slider-row .lbl { font-size:11px; color:#9ca3af; min-width:88px; }
+  details.forces { margin-top:10px; border-top:1px solid #374151; padding-top:6px; }
+  details.forces > summary { font-size:12px; color:#cbd5e1; cursor:pointer; padding:2px 0;
+                             list-style:none; user-select:none; }
+  details.forces > summary::before { content:'▸ '; color:#6b7280; }
+  details.forces[open] > summary::before { content:'▾ '; }
+  details.forces .group { font-size:10.5px; color:#6b7280; margin-top:8px;
+                          text-transform:uppercase; letter-spacing:.5px; }
+  details.forces .reset { margin-top:8px; font-size:11px; padding:3px 10px;
+                          background:#1f2937; color:#9ca3af; border:1px solid #374151;
+                          border-radius:4px; cursor:pointer; }
+  details.forces .reset:hover { background:#374151; color:#e5e7eb; }
+</style>
+</head>
+<body>
+<canvas id="space"></canvas>
+<div class="panel" id="info">
+  <a href="https://choi-seongjin.github.io/" class="home" style="color:#6b7280;">← Choi Lab</a>
+  <a href="index.html" class="home">← Transport Atlas</a>
+  <h1>Topic space</h1>
+  <div class="meta" id="meta-text"></div>
+
+  <div class="radio-row" title="Coauthor = Leiden on actual collaborations. Semantic = Leiden on k-NN of paper embeddings.">
+    Color by:
+    <label><input type="radio" name="cmode" value="coauthor" checked> coauthor comm</label>
+    <label><input type="radio" name="cmode" value="semantic"> semantic comm</label>
+  </div>
+
+  <div style="display:flex; gap:6px; margin-top:6px;">
+    <button id="restart" title="Restart simulation">Restart</button>
+    <button id="freeze" title="Freeze / thaw physics">Freeze</button>
+    <button id="center" title="Recenter camera">Center</button>
+  </div>
+  <div style="display:flex; align-items:center; gap:8px; margin-top:6px; font-size:11px;">
+    <span>Spread</span>
+    <input type="range" id="spread-slider" min="0.5" max="3.0" step="0.1" value="1.0" style="flex:1;">
+    <span id="spread-val" style="font-variant-numeric:tabular-nums;min-width:32px;text-align:right;color:#9ca3af;">1.0</span>
+  </div>
+
+  <label class="toggle" title="Draw a polyline through the selected author's 5-year-binned topic positions">
+    <input type="checkbox" id="traj-toggle" checked> Show topic trajectory on select
+  </label>
+
+  <details class="forces" title="Live-tune the force simulation.">
+    <summary>Layout forces</summary>
+
+    <div class="group">Link (semantic kNN)</div>
+    <div class="slider-row"><span class="lbl">base distance</span>
+      <input type="range" id="f-link-base" min="10" max="200" step="1" value="70">
+      <span class="val" id="f-link-base-v">70</span></div>
+    <div class="slider-row"><span class="lbl">strength mult</span>
+      <input type="range" id="f-link-str" min="0" max="1.5" step="0.02" value="0.6">
+      <span class="val" id="f-link-str-v">0.60</span></div>
+
+    <div class="group">Global</div>
+    <div class="slider-row"><span class="lbl">charge (repel)</span>
+      <input type="range" id="f-charge" min="-400" max="0" step="5" value="-140">
+      <span class="val" id="f-charge-v">-140</span></div>
+    <div class="slider-row"><span class="lbl">center pull</span>
+      <input type="range" id="f-center" min="0" max="0.2" step="0.005" value="0.03">
+      <span class="val" id="f-center-v">0.030</span></div>
+    <div class="slider-row"><span class="lbl">collide pad</span>
+      <input type="range" id="f-collide" min="0" max="12" step="0.5" value="2">
+      <span class="val" id="f-collide-v">2</span></div>
+
+    <div class="group">Simulation</div>
+    <div class="slider-row"><span class="lbl">alpha decay</span>
+      <input type="range" id="f-decay" min="0.005" max="0.1" step="0.001" value="0.035">
+      <span class="val" id="f-decay-v">0.035</span></div>
+
+    <div style="margin-top:6px; font-size:10px; color:#6b7280; line-height:1.5;">
+      Nodes seed from UMAP coords, so small tweaks mostly refine locally.
+      Hit <b>Shake</b> to disturb positions and see forces rebuild layout.
+    </div>
+    <div style="display:flex; gap:6px; margin-top:6px;">
+      <button class="reset" id="f-shake" title="Perturb node positions and re-run">Shake</button>
+      <button class="reset" id="f-reset" title="Restore default values">Reset</button>
+    </div>
+  </details>
+
+  <div style="margin-top:10px;">
+    <input type="text" id="search" placeholder="Search author name…" autocomplete="off">
+    <div id="results"></div>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button id="btn-hubs" class="toggle-small">▸ Top 100 authors by paper count</button>
+    <div id="hubs-list" style="display:none;"></div>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button id="btn-comms" class="toggle-small">▸ Semantic communities</button>
+    <div id="comms-panel" style="display:none;">
+      <div id="comms-summary" style="font-size:11px;color:#9ca3af;margin:6px 0 3px;"></div>
+      <div id="comms-list"></div>
+    </div>
+  </div>
+
+  <div id="selected"></div>
+</div>
+
+<div class="panel" id="legend">
+  <div style="color:#cbd5e1;margin-bottom:3px;">
+    Point = author · position = mean SPECTER2 embedding of their papers → UMAP 2D ·
+    size = # papers · color = Leiden community (coauthor or semantic, toggleable)
+  </div>
+  <div style="color:#9ca3af;">
+    Nearby points work on similar topics. <span style="color:#fbbf24;">⚡</span>
+    marks <b>phantom collaborators</b>: top semantic neighbors that sit ≥3 hops away in
+    the coauthor graph — people researching the same thing who've never coauthored.
+  </div>
+  <div style="color:#6b7280;margin-top:2px;">
+    Drag to pan · wheel to zoom · click a point · yellow polyline = topic drift across 5-year bins ·
+    <a href="#" id="report-general" class="report-link" target="_blank" rel="noopener">Report data issue</a>
+  </div>
+</div>
+
+<div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:#1f2937;color:#e5e7eb;padding:8px 14px;border-radius:6px;border:1px solid #374151;
+  font-size:12px;z-index:200;display:none;box-shadow:0 4px 12px rgba(0,0,0,.4);"></div>
+
+<div id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-stat" id="tt-stat"></div>
+  <div class="tt-comm" id="tt-comm"></div>
+  <div class="tt-nbr" id="tt-nbr"></div>
+</div>
+
+<script>
+const cacheBust = "{{ cache_bust }}";
+const REPORT_EMAIL = "chois@umn.edu";
+const REPORT_REPO  = "UMN-Choi-Lab/transport-atlas-issues";
+const canvas = document.getElementById('space');
+const ctx = canvas.getContext('2d');
+let width = canvas.width = window.innerWidth;
+let height = canvas.height = window.innerHeight;
+const meta = document.getElementById('meta-text');
+meta.innerHTML = '<div class="count">Loading…</div><div class="params">fetching topic_coords.json</div>';
+
+(async function boot() {
+const progress = (msg) => { meta.innerHTML = `<div class="count">${msg}</div>`; };
+let COORDS, SIMILAR, TRAJ, NETMETA, SEMCOMMS;
+try {
+  progress('Fetching topic coords…');
+  const pC  = fetch(`data/topic_coords.json?v=${cacheBust}`).then(r => r.json());
+  progress('Fetching semantic neighbors (~90MB)…');
+  const pS  = fetch(`data/author_similar.json?v=${cacheBust}`).then(r => r.json());
+  progress('Fetching trajectories…');
+  const pT  = fetch(`data/author_trajectories.json?v=${cacheBust}`).then(r => r.json());
+  progress('Fetching coauthor meta…');
+  const pN  = fetch(`data/coauthor_network.json?v=${cacheBust}`).then(r => r.json()).then(d => d.meta);
+  progress('Fetching semantic communities…');
+  const pCm = fetch(`data/semantic_communities.json?v=${cacheBust}`).then(r => r.ok ? r.json() : []).catch(() => []);
+  progress('Downloading data (total ~125MB)…');
+  [COORDS, SIMILAR, TRAJ, NETMETA, SEMCOMMS] = await Promise.all([pC, pS, pT, pN, pCm]);
+  progress('Building view…');
+} catch (err) {
+  meta.innerHTML = '<div class="count" style="color:#f87171;">Failed to load</div>'
+    + '<div class="params">' + (err.message || err) + '</div>';
+  console.error('[topic-space] load failed:', err);
+  return;
+}
+
+const nodes = Object.entries(COORDS).map(([nid, o]) => ({
+  id: +nid, x: +o.x, y: +o.y, community: o.c, sc: o.sc, label: o.n, papers: o.p,
+  orcid: o.o || null,
+}));
+const nodeById = new Map(nodes.map(n => [n.id, n]));
+const nSem = Array.isArray(SEMCOMMS) ? SEMCOMMS.length : 0;
+const nCoCom = (NETMETA && NETMETA.communities)
+  ? NETMETA.communities.filter(c => !c.misc).length : 0;
+
+meta.innerHTML =
+  `<div class="count">${nodes.length.toLocaleString()} authors in topic space</div>`
+  + `<div class="params">SPECTER2 + UMAP 2D · `
+    + `${nCoCom} coauthor comms`
+    + (nSem ? ` · ${nSem} semantic comms` : '')
+    + (NETMETA && NETMETA.built_at ? ` · ${NETMETA.built_at}` : '')
+    + `</div>`;
+
+// Color maps
+const coauthorColor = new Map();
+const coauthorLabel = new Map();
+if (NETMETA && NETMETA.communities) {
+  for (const c of NETMETA.communities) {
+    coauthorColor.set(c.id, c.color);
+    coauthorLabel.set(c.id, (c.label_words || []).slice(0, 3).join(' · '));
+  }
+}
+const semanticColor = new Map();
+const semanticLabel = new Map();
+const semanticMeta = new Map();   // sc id -> full community object
+if (Array.isArray(SEMCOMMS)) {
+  for (const c of SEMCOMMS) {
+    semanticColor.set(c.id, c.color);
+    semanticLabel.set(c.id, (c.label_words || []).slice(0, 3).join(' · '));
+    semanticMeta.set(c.id, c);
+  }
+}
+let COLOR_MODE = 'coauthor';
+function nodeColor(n) {
+  if (COLOR_MODE === 'semantic') return semanticColor.get(n.sc) || '#555';
+  return coauthorColor.get(n.community) || '#555';
+}
+function nodeCommunityKey(n) { return COLOR_MODE === 'semantic' ? n.sc : n.community; }
+function commLabel(k) {
+  return COLOR_MODE === 'semantic' ? (semanticLabel.get(k) || '') : (coauthorLabel.get(k) || '');
+}
+
+const rScale = d3.scaleSqrt().domain([1, d3.max(nodes, d => d.papers) || 10]).range([2.5, 12]);
+
+// Build semantic-kNN edge set — MUTUAL kNN, top-K + similarity threshold.
+// Tight backbone gives cluster structure; low-sim ties are kept around as optional.
+const MUTUAL_K = 3;
+const MIN_SIM_EDGE = 0.55;    // drop extremely weak ties so clusters don't hairball
+const edges = (() => {
+  const topSet = new Map();
+  for (const [nidStr, sims] of Object.entries(SIMILAR)) {
+    const a = +nidStr;
+    const s = new Set();
+    for (let i = 0; i < Math.min(MUTUAL_K, sims.length); i++) s.add(sims[i].id);
+    topSet.set(a, s);
+  }
+  const pairs = new Map();
+  for (const [nidStr, sims] of Object.entries(SIMILAR)) {
+    const a = +nidStr;
+    const kLim = Math.min(MUTUAL_K, sims.length);
+    for (let i = 0; i < kLim; i++) {
+      const sObj = sims[i];
+      const b = sObj.id;
+      if (a === b || !nodeById.has(b)) continue;
+      if (sObj.sim < MIN_SIM_EDGE) continue;
+      const bSet = topSet.get(b);
+      if (!bSet || !bSet.has(a)) continue;
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      if (!pairs.has(key)) {
+        pairs.set(key, {
+          source: a < b ? a : b,
+          target: a < b ? b : a,
+          sim: sObj.sim,
+          phantom: sObj.phantom,
+        });
+      }
+    }
+  }
+  return Array.from(pairs.values());
+})();
+console.log(`[topic-space] ${edges.length} mutual-kNN edges (K=${MUTUAL_K}, sim>=${MIN_SIM_EDGE})`);
+
+// Seed node positions from UMAP — scale to screen-space, offset to center.
+// D3 force simulation then relaxes them while preserving UMAP topology.
+// Save the transform so trajectory points (which arrive in UMAP space) can be rescaled.
+let UMAP_CX = 0, UMAP_CY = 0, UMAP_SCALE = 1;
+{
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const n of nodes) {
+    if (n.x < xmin) xmin = n.x;
+    if (n.x > xmax) xmax = n.x;
+    if (n.y < ymin) ymin = n.y;
+    if (n.y > ymax) ymax = n.y;
+  }
+  const span = Math.max(xmax - xmin, ymax - ymin) || 1;
+  UMAP_SCALE = 0.75 * Math.min(width, height) / span;
+  UMAP_CX = (xmin + xmax) / 2;
+  UMAP_CY = (ymin + ymax) / 2;
+  const sx = width / 2, sy = height / 2;
+  for (const n of nodes) {
+    n.x = sx + (n.x - UMAP_CX) * UMAP_SCALE;
+    n.y = sy + (n.y - UMAP_CY) * UMAP_SCALE;
+  }
+}
+function umapToScreen(ux, uy) {
+  return [width / 2 + (ux - UMAP_CX) * UMAP_SCALE,
+          height / 2 + (uy - UMAP_CY) * UMAP_SCALE];
+}
+
+// D3 force simulation — link force draws UMAP neighbors together, charge repels,
+// center pulls gently so the cloud stays on screen, collide prevents overlap.
+// Sim values span [0.27, 1.00] after whitening — use them to drive link strength
+// and distance so high-sim pairs cluster tighter.
+let sparsity = 1.0;
+// Force parameters — mutable via Forces panel. Spread slider scales linkBase & charge.
+const F = {
+  linkBase: 70, linkStrMult: 0.6,
+  charge: -140, centerStr: 0.03, collidePad: 2, decay: 0.035,
+};
+const F_DEFAULTS = { ...F };
+function linkDistFn(d) { return F.linkBase * sparsity * (1.2 - d.sim); }
+function linkStrFn(d)  { return 0.05 + F.linkStrMult * Math.max(0, d.sim - 0.3); }
+function chargeStr()   { return F.charge * sparsity; }
+let simulation = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(edges).id(d => d.id).distance(linkDistFn).strength(linkStrFn))
+  .force('charge', d3.forceManyBody().strength(chargeStr()))
+  .force('center', d3.forceCenter(width / 2, height / 2).strength(F.centerStr))
+  .force('collide', d3.forceCollide().radius(d => rScale(d.papers) + F.collidePad))
+  .alphaDecay(F.decay)
+  .on('tick', () => draw())
+  .on('end', () => fitToView());
+
+// ——— Forces panel wiring ———
+// Nodes seed from UMAP coords, so the simulation converges very close to UMAP.
+// alpha(0.3) barely perturbs that equilibrium — need alpha(1.0) for visible
+// re-arrangement when params change.
+function bumpSim() { simulation.alpha(1.0).restart(); }
+function bindF(id, key, fmt, onChange) {
+  const el = document.getElementById(id); if (!el) return;
+  const out = document.getElementById(id + '-v');
+  el.addEventListener('input', () => {
+    F[key] = +el.value;
+    if (out) out.textContent = fmt(F[key]);
+    onChange();
+  });
+}
+const f2 = v => (+v).toFixed(2);
+const f3 = v => (+v).toFixed(3);
+const fi = v => Math.round(+v).toString();
+bindF('f-link-base', 'linkBase',    fi, () => { simulation.force('link').distance(linkDistFn); bumpSim(); });
+bindF('f-link-str',  'linkStrMult', f2, () => { simulation.force('link').strength(linkStrFn); bumpSim(); });
+bindF('f-charge',    'charge',      fi, () => { simulation.force('charge').strength(chargeStr()); bumpSim(); });
+bindF('f-center',    'centerStr',   f3, () => { simulation.force('center').strength(F.centerStr); bumpSim(); });
+bindF('f-collide',   'collidePad',  f2, () => {
+  simulation.force('collide').radius(d => rScale(d.papers) + F.collidePad); bumpSim();
+});
+bindF('f-decay',     'decay',       f3, () => { simulation.alphaDecay(F.decay); });
+
+document.getElementById('f-shake').addEventListener('click', () => {
+  // Random jitter proportional to viewport — breaks the UMAP anchor so forces
+  // drive a fresh layout. Stays within the current view bbox for continuity.
+  const jitter = Math.min(width, height) * 0.25;
+  for (const n of nodes) {
+    n.x += (Math.random() - 0.5) * jitter;
+    n.y += (Math.random() - 0.5) * jitter;
+    n.vx = n.vy = 0;
+  }
+  simulation.alpha(1).restart();
+});
+
+document.getElementById('f-reset').addEventListener('click', () => {
+  Object.assign(F, F_DEFAULTS);
+  const map = [
+    ['f-link-base', F.linkBase,    fi], ['f-link-str', F.linkStrMult, f2],
+    ['f-charge',    F.charge,      fi], ['f-center',   F.centerStr,   f3],
+    ['f-collide',   F.collidePad,  f2], ['f-decay',    F.decay,       f3],
+  ];
+  for (const [id, v, fmt] of map) {
+    const el = document.getElementById(id); if (el) el.value = v;
+    const out = document.getElementById(id + '-v'); if (out) out.textContent = fmt(v);
+  }
+  simulation.force('link').distance(linkDistFn).strength(linkStrFn);
+  simulation.force('charge').strength(chargeStr());
+  simulation.force('center').strength(F.centerStr);
+  simulation.force('collide').radius(d => rScale(d.papers) + F.collidePad);
+  simulation.alphaDecay(F.decay);
+  bumpSim();
+});
+
+// Re-fit after a short warmup so initial view frames the whole layout
+setTimeout(() => fitToView(), 1200);
+function applySparsity(s) {
+  sparsity = s;
+  simulation.force('link').distance(linkDistFn);
+  simulation.force('charge').strength(chargeStr());
+  simulation.alpha(0.4).restart();
+}
+
+// Pan/zoom — same scale-extent as coauthor_network
+let transform = d3.zoomIdentity;
+const zoom = d3.zoom().scaleExtent([0.02, 8]).on('zoom', (e) => { transform = e.transform; draw(); });
+d3.select(canvas).call(zoom);
+
+function fitToView(pad = 0.9) {
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const n of nodes) {
+    if (n.x < xmin) xmin = n.x; if (n.x > xmax) xmax = n.x;
+    if (n.y < ymin) ymin = n.y; if (n.y > ymax) ymax = n.y;
+  }
+  const w = Math.max(xmax - xmin, 1), h = Math.max(ymax - ymin, 1);
+  const k = Math.min(width / w, height / h) * pad;
+  const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  const tx = width / 2 - cx * k, ty = height / 2 - cy * k;
+  d3.select(canvas).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+}
+
+let selected = null, hovered = null;
+let commFilter = null;   // when set, dims points not in this community (current mode)
+
+function draw() {
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+
+  ctx.lineCap = 'round';
+  const wMult = Math.max(1, 1 / transform.k);
+  const nodeMult = Math.min(8, Math.pow(Math.max(1 / transform.k, 1), 0.75));
+
+  const selKey = selected ? nodeCommunityKey(selected) : null;
+
+  // ——— Semantic kNN edges (drawn first, under nodes) ———
+  // Without a selection: light grey everywhere, brighter inside filtered community.
+  // With a selection: dim all, then redraw selected's neighbors on top in tier colors.
+  if (!selected) {
+    if (commFilter !== null) {
+      ctx.strokeStyle = 'rgba(156,163,175,0.05)';
+      for (const e of edges) {
+        const ka = nodeCommunityKey(e.source), kb = nodeCommunityKey(e.target);
+        if (ka === commFilter && kb === commFilter) continue;
+        ctx.beginPath(); ctx.lineWidth = 0.7 * wMult;
+        ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(156,163,175,0.45)';
+      for (const e of edges) {
+        const ka = nodeCommunityKey(e.source), kb = nodeCommunityKey(e.target);
+        if (!(ka === commFilter && kb === commFilter)) continue;
+        ctx.beginPath(); ctx.lineWidth = 0.9 * wMult;
+        ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = 'rgba(156,163,175,0.12)';
+      for (const e of edges) {
+        ctx.beginPath(); ctx.lineWidth = 0.6 * wMult;
+        ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+      }
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(156,163,175,0.05)';
+    for (const e of edges) {
+      ctx.beginPath(); ctx.lineWidth = 0.5 * wMult;
+      ctx.moveTo(e.source.x, e.source.y); ctx.lineTo(e.target.x, e.target.y); ctx.stroke();
+    }
+    // Neighbor highlights for selected — cyan (coauthor) vs amber (phantom)
+    const sims = SIMILAR[String(selected.id)] || [];
+    ctx.lineWidth = 1.6 * wMult;
+    for (const s of sims) {
+      const t = nodeById.get(s.id); if (!t) continue;
+      ctx.strokeStyle = s.phantom ? 'rgba(251,191,36,0.85)' : 'rgba(56,189,248,0.75)';
+      ctx.beginPath();
+      ctx.moveTo(selected.x, selected.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    }
+  }
+
+  // ——— Nodes ———
+  for (const n of nodes) {
+    const isSel = selected && n.id === selected.id;
+    let alpha = 1.0;
+    const k = nodeCommunityKey(n);
+    if (selected && !isSel) {
+      alpha = (k !== selKey) ? 0.15 : 0.65;
+    } else if (commFilter !== null) {
+      alpha = (k === commFilter) ? 0.95 : 0.12;
+    }
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, rScale(n.papers) * nodeMult, 0, Math.PI * 2);
+    ctx.fillStyle = nodeColor(n); ctx.fill();
+    if (isSel) {
+      ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2 / transform.k; ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1.0;
+
+  // ——— Zoom-based labels for all large nodes (mirrors coauthor_network) ———
+  if (transform.k > 0.25) {
+    const fontPx = Math.max(9, 11 / transform.k);
+    ctx.font = `${fontPx}px -apple-system,sans-serif`;
+    ctx.fillStyle = 'rgba(229,231,235,0.9)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    let minPapers;
+    if      (transform.k >= 2.0) minPapers = 0;
+    else if (transform.k >= 1.2) minPapers = 8;
+    else if (transform.k >= 0.8) minPapers = 20;
+    else if (transform.k >= 0.5) minPapers = 40;
+    else                         minPapers = 80;
+    for (const n of nodes) {
+      if (n.papers < minPapers && n !== selected) continue;
+      // Respect current dim/filter state by skipping nearly-hidden nodes
+      const key = nodeCommunityKey(n);
+      if (selected && n !== selected && key !== nodeCommunityKey(selected)) continue;
+      if (!selected && commFilter !== null && key !== commFilter) continue;
+      const r = rScale(n.papers) * nodeMult;
+      ctx.fillText(n.label, n.x, n.y + r + 2);
+    }
+  }
+
+  // ——— Labels for selected + its semantic neighbors ———
+  if (selected) {
+    const sims = SIMILAR[String(selected.id)] || [];
+    ctx.font = `${Math.max(10, 11 / transform.k)}px -apple-system,sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (const s of sims) {
+      const t = nodeById.get(s.id); if (!t) continue;
+      ctx.fillStyle = s.phantom ? '#fbbf24' : '#38bdf8';
+      ctx.fillText(t.label, t.x, t.y + rScale(t.papers) * nodeMult + 2);
+    }
+    ctx.fillStyle = '#f3f4f6';
+    ctx.font = `${Math.max(12, 13 / transform.k)}px -apple-system,sans-serif`;
+    ctx.fillText(selected.label, selected.x, selected.y + rScale(selected.papers) * nodeMult + 2);
+  }
+
+  // Trajectory polyline for selected — points arrive in UMAP space, rescale to screen.
+  const trajCb = document.getElementById('traj-toggle');
+  if (selected && trajCb && trajCb.checked) {
+    const traj = TRAJ[String(selected.id)];
+    if (traj && traj.length >= 2) {
+      const pts = traj.map(p => { const [x, y] = umapToScreen(p.x, p.y); return { ...p, sx: x, sy: y }; });
+      ctx.strokeStyle = 'rgba(252,211,77,0.85)';
+      ctx.lineWidth = 1.7 / transform.k;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].sx, pts[0].sy);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+      ctx.stroke();
+      ctx.fillStyle = '#fcd34d';
+      ctx.font = `${Math.max(9, 9.5 / transform.k)}px -apple-system,sans-serif`;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      for (const pt of pts) {
+        ctx.beginPath(); ctx.arc(pt.sx, pt.sy, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillText(`${pt.p}-${pt.p + 4}`, pt.sx + 3, pt.sy);
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+function nodeAtScreen(sx, sy) {
+  const x = (sx - transform.x) / transform.k;
+  const y = (sy - transform.y) / transform.k;
+  const nodeMult = Math.min(8, Math.pow(Math.max(1 / transform.k, 1), 0.75));
+  let best = null, bestD = Infinity;
+  const tol = 8 / transform.k;
+  for (const n of nodes) {
+    const dx = n.x - x, dy = n.y - y;
+    const d2 = dx*dx + dy*dy;
+    const r = rScale(n.papers) * nodeMult + 1.5 / transform.k + tol;
+    if (d2 < r * r && d2 < bestD) { best = n; bestD = d2; }
+  }
+  return best;
+}
+
+// Tooltip
+const tip = document.getElementById('tooltip');
+const ttName = document.getElementById('tt-name');
+const ttStat = document.getElementById('tt-stat');
+const ttComm = document.getElementById('tt-comm');
+const ttNbr  = document.getElementById('tt-nbr');
+canvas.addEventListener('mousemove', (e) => {
+  hovered = nodeAtScreen(e.clientX, e.clientY);
+  if (hovered) {
+    canvas.style.cursor = 'pointer';
+    ttName.textContent = hovered.label;
+    ttStat.innerHTML = `${hovered.papers} papers`
+      + (hovered.orcid
+          ? ` · <a href="https://orcid.org/${escHtml(hovered.orcid)}" target="_blank" rel="noopener"
+               style="color:#a7f3d0;text-decoration:none;" title="ORCID profile">ORCID ${escHtml(hovered.orcid)}</a>`
+          : '');
+    const coLbl = coauthorLabel.get(hovered.community);
+    const semLbl = semanticLabel.get(hovered.sc);
+    ttComm.innerHTML =
+      `<b>coauthor comm ${hovered.community ?? '—'}</b>` + (coLbl ? ` <span class="kw">${escHtml(coLbl)}</span>` : '')
+      + (hovered.sc != null
+          ? `<br><b style="color:#c084fc;">semantic comm ${hovered.sc}</b>`
+            + (semLbl ? ` <span class="kw">${escHtml(semLbl)}</span>` : '')
+          : '');
+    const sims = SIMILAR[String(hovered.id)] || [];
+    if (sims.length) {
+      const shown = sims.slice(0, 3);
+      const nPhantom = sims.filter(s => s.phantom).length;
+      ttNbr.innerHTML = `<b>Top neighbors:</b> ${shown.map(s =>
+        `${escHtml(s.name)} (${(s.sim*100).toFixed(0)}%${s.phantom?' ⚡':''})`).join(', ')}`
+        + (sims.length > 3 ? ` … <span style="color:#9ca3af;">+${sims.length - 3} more</span>` : '')
+        + `<br><span style="color:#9ca3af;">${nPhantom}/${sims.length} phantom</span>`;
+      ttNbr.style.display = 'block';
+    } else {
+      ttNbr.innerHTML = ''; ttNbr.style.display = 'none';
+    }
+    let x = e.clientX + 10, y = e.clientY + 10;
+    if (x + 340 > window.innerWidth) x = e.clientX - 340;
+    if (y + 180 > window.innerHeight) y = e.clientY - 180;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.display = 'block';
+  } else { canvas.style.cursor = 'grab'; tip.style.display = 'none'; }
+});
+canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+// Selected panel
+function renderSelectedPanel() {
+  const box = document.getElementById('selected');
+  if (!selected) { box.innerHTML = ''; return; }
+  const sims = SIMILAR[String(selected.id)] || [];
+  const traj = TRAJ[String(selected.id)];
+  const subj = encodeURIComponent(`Transport Atlas: wrong attribution for "${selected.label}"`);
+  const body = encodeURIComponent(reportBodyForNode(selected));
+  let html =
+    `<div class="name">${escHtml(selected.label)}</div>`
+    + (selected.orcid
+        ? `<div style="font-size:11px;margin-top:2px;">`
+          + `<a href="https://orcid.org/${escHtml(selected.orcid)}" target="_blank" rel="noopener"
+               style="color:#a7f3d0;text-decoration:none;" title="Open ORCID profile">`
+          + `ORCID ${escHtml(selected.orcid)} ↗</a></div>`
+        : '')
+    + `<div class="stat">${selected.papers} papers`
+      + ` · coauthor-comm ${selected.community}`
+      + (selected.sc != null ? ` · sem-comm ${selected.sc}` : '')
+      + (traj && traj.length ? ` · ${traj.length} year-bins` : '')
+      + `</div>`;
+  if (sims.length) {
+    const nPhantom = sims.filter(s => s.phantom).length;
+    html += `<div style="margin-top:8px;color:#9ca3af;font-size:11px;">`
+         + `Top ${sims.length} semantic neighbors`
+         + (nPhantom ? ` · <span style="color:#fbbf24;">${nPhantom} phantom ⚡</span>` : '')
+         + `</div>`;
+    html += '<div id="similar-list">';
+    for (const s of sims) {
+      const dStr = s.d != null ? `${s.d} hop${s.d === 1 ? '' : 's'}` : '≥4 / disconnected';
+      const phantom = s.phantom
+        ? ' <span title="Semantic match ≥3 hops away in coauthor graph — never co-authored" style="color:#fbbf24;">⚡</span>'
+        : '';
+      html += `<div class="sim-item" data-id="${s.id}" title="coauthor distance: ${dStr}">`
+        + `<span class="name">${escHtml(s.name)}${phantom}</span>`
+        + `<span class="sim">${(s.sim * 100).toFixed(0)}%</span></div>`;
+    }
+    html += '</div>';
+  }
+  html += `<a class="report" href="mailto:${REPORT_EMAIL}?subject=${subj}&body=${body}" `
+       + `target="_blank" rel="noopener" title="Report wrong attribution">🚩 Report</a>`
+       + ` <span class="report" id="report-node-copy" style="cursor:pointer;" title="Copy details">📋 copy</span>`
+       + ` <a class="report" href="https://github.com/${REPORT_REPO}/issues/new?title=${subj}&body=${body}" target="_blank" rel="noopener">↗ GitHub</a>`;
+  box.innerHTML = html;
+  box.querySelectorAll('.sim-item').forEach(el => el.addEventListener('click', () => {
+    const id = +el.dataset.id; const n = nodeById.get(id);
+    if (n) centerOn(n);
+  }));
+  const copyBtn = document.getElementById('report-node-copy');
+  if (copyBtn) copyBtn.addEventListener('click', () =>
+    copyText(reportBodyForNode(selected), 'Node details copied — paste into email or GitHub'));
+}
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function centerOn(n) {
+  selected = n;
+  commFilter = null;
+  document.querySelectorAll('.comm-item.sel').forEach(el => el.classList.remove('sel'));
+  renderSelectedPanel();
+  // Frame the node + its semantic neighbors in view, keeping the selected node centered.
+  // Scale is chosen so the farthest neighbor is ~75% of the way from the viewport center
+  // to the viewport edge — leaving headroom for labels and so the cluster "breathes".
+  const sims = SIMILAR[String(n.id)] || [];
+  let maxDist = 0;
+  for (const s of sims) {
+    const t = nodeById.get(s.id); if (!t) continue;
+    const d = Math.hypot(t.x - n.x, t.y - n.y);
+    if (d > maxDist) maxDist = d;
+  }
+  const pad = 40;
+  const halfViewport = Math.min(width, height) / 2;
+  const scale = maxDist > 0
+    ? Math.min(3.0, Math.max(0.6, (halfViewport * 0.75) / (maxDist + pad)))
+    : 2.0;   // isolated node — modest zoom-in, no reference distance
+  const tx = width / 2 - n.x * scale;
+  const ty = height / 2 - n.y * scale;
+  d3.select(canvas).transition().duration(500)
+    .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+canvas.addEventListener('click', (e) => {
+  const n = nodeAtScreen(e.clientX, e.clientY);
+  selected = n; renderSelectedPanel(); draw();
+});
+document.getElementById('traj-toggle').addEventListener('change', draw);
+document.querySelectorAll('input[name="cmode"]').forEach(r => r.addEventListener('change', (e) => {
+  COLOR_MODE = e.target.value;
+  commFilter = null;
+  document.querySelectorAll('.comm-item.sel').forEach(el => el.classList.remove('sel'));
+  renderCommsList();
+  draw();
+}));
+
+// Search
+const searchInput = document.getElementById('search');
+const resultsDiv = document.getElementById('results');
+searchInput.addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { resultsDiv.innerHTML = ''; return; }
+  const matches = nodes
+    .filter(n => n.label.toLowerCase().includes(q))
+    .sort((a, b) => b.papers - a.papers)
+    .slice(0, 25);
+  resultsDiv.innerHTML = matches.length
+    ? matches.map(n =>
+        `<div class="result-item" data-id="${n.id}"><span>${escHtml(n.label)}</span><span class="count">${n.papers}</span></div>`).join('')
+    : '<div style="color:#888;padding:4px 8px;font-size:12px;">No matches</div>';
+});
+resultsDiv.addEventListener('click', (e) => {
+  const it = e.target.closest('.result-item'); if (!it) return;
+  const n = nodeById.get(+it.dataset.id); if (n) centerOn(n);
+});
+
+// Hubs list (top 100 by papers)
+const btnHubs = document.getElementById('btn-hubs');
+const hubsList = document.getElementById('hubs-list');
+btnHubs.addEventListener('click', () => {
+  const open = hubsList.style.display === 'block';
+  if (open) { hubsList.style.display = 'none'; btnHubs.textContent = '▸ Top 100 authors by paper count'; return; }
+  const top = nodes.slice().sort((a, b) => b.papers - a.papers).slice(0, 100);
+  hubsList.innerHTML = top.map((n, i) =>
+    `<div class="hub-item" data-id="${n.id}">`
+    + `<span class="rank">#${i + 1}</span>`
+    + `<span class="name">${escHtml(n.label)}</span>`
+    + `<span class="count">${n.papers}</span></div>`).join('');
+  hubsList.querySelectorAll('.hub-item').forEach(el => el.addEventListener('click', () => {
+    const n = nodeById.get(+el.dataset.id); if (n) centerOn(n);
+  }));
+  hubsList.style.display = 'block';
+  btnHubs.textContent = '▾ Top 100 authors by paper count';
+});
+
+// Community list — shows whichever mode is active
+const btnComms = document.getElementById('btn-comms');
+const commsPanel = document.getElementById('comms-panel');
+const commsList = document.getElementById('comms-list');
+const commsSummary = document.getElementById('comms-summary');
+btnComms.addEventListener('click', () => {
+  const open = commsPanel.style.display === 'block';
+  if (open) { commsPanel.style.display = 'none'; btnComms.textContent = '▸ Semantic communities'; return; }
+  commsPanel.style.display = 'block';
+  btnComms.textContent = '▾ Semantic communities';
+  renderCommsList();
+});
+function renderCommsList() {
+  if (commsPanel.style.display !== 'block') return;
+  let items;
+  if (COLOR_MODE === 'semantic') {
+    items = SEMCOMMS.slice().sort((a, b) => b.size - a.size);
+    commsSummary.textContent =
+      `${items.length} semantic Leiden communities — click to filter, click again to clear`;
+  } else {
+    items = (NETMETA.communities || []).filter(c => !c.misc).slice().sort((a, b) => b.size - a.size);
+    commsSummary.textContent =
+      `${items.length} coauthor Leiden communities — click to filter, click again to clear`;
+  }
+  commsList.innerHTML = items.slice(0, 80).map(c => {
+    const hubs = (c.top_authors || []).slice(0, 2).join(', ');
+    const kw = (c.label_words || []).slice(0, 4).join(' · ');
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;background:${c.color};`
+                 + `border-radius:50%;margin-right:6px;vertical-align:middle;"></span>`;
+    return `<div class="comm-item" data-id="${c.id}">`
+         + `<div class="hd">${swatch}<span class="name">#${c.id} ${escHtml(hubs) || '—'}</span>`
+         + `<span class="count">${c.size.toLocaleString()}</span></div>`
+         + (kw ? `<div class="kw">${escHtml(kw)}</div>` : '')
+         + `</div>`;
+  }).join('');
+  commsList.querySelectorAll('.comm-item').forEach(el => el.addEventListener('click', () => {
+    const id = +el.dataset.id;
+    if (commFilter === id) {
+      commFilter = null; el.classList.remove('sel');
+    } else {
+      commFilter = id;
+      document.querySelectorAll('.comm-item.sel').forEach(s => s.classList.remove('sel'));
+      el.classList.add('sel');
+    }
+    draw();
+  }));
+}
+
+// Report helpers
+function reportBodyForNode(n) {
+  const sims = SIMILAR[String(n.id)] || [];
+  const topSim = sims.slice(0, 5).map(s => `  - ${s.name}  ${(s.sim*100).toFixed(1)}%  d=${s.d ?? 'null'}${s.phantom?' ⚡':''}`).join('\n');
+  return `Author: ${n.label}\nNode id: ${n.id}\nPapers: ${n.papers}\nCoauthor community: ${n.community}\nSemantic community: ${n.sc ?? '—'}\n\nTop semantic neighbors:\n${topSim || '  (none)'}\n\n(Describe the issue below.)\n`;
+}
+function copyText(t, msg) {
+  navigator.clipboard?.writeText(t).then(() => toast(msg || 'Copied'));
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 1800);
+}
+document.getElementById('report-general').href =
+  `mailto:${REPORT_EMAIL}?subject=` + encodeURIComponent('Transport Atlas: topic-space data issue')
+  + `&body=` + encodeURIComponent('(Describe the issue below.)\n\nDataset: transport-atlas topic space\n');
+
+// Control wiring
+document.getElementById('restart').addEventListener('click', () => simulation.alpha(0.6).restart());
+let frozen = false;
+document.getElementById('freeze').addEventListener('click', (e) => {
+  frozen = !frozen;
+  if (frozen) simulation.stop();
+  else simulation.alpha(0.3).restart();
+  e.target.textContent = frozen ? 'Thaw' : 'Freeze';
+});
+document.getElementById('center').addEventListener('click', () => {
+  d3.select(canvas).transition().duration(400)
+    .call(zoom.transform, d3.zoomIdentity);
+});
+const spreadSlider = document.getElementById('spread-slider');
+const spreadVal = document.getElementById('spread-val');
+spreadSlider.addEventListener('input', (e) => {
+  const s = +e.target.value;
+  spreadVal.textContent = s.toFixed(1);
+  applySparsity(s);
+});
+
+window.addEventListener('resize', () => {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+  simulation.force('center', d3.forceCenter(width / 2, height / 2).strength(0.05));
+  simulation.alpha(0.2).restart();
+  draw();
+});
+
+draw();
+})();
+</script>
+</body>
+</html>

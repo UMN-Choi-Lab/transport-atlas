@@ -1,0 +1,64 @@
+seed: 1337
+
+openalex:
+  base_url: "https://api.openalex.org"
+  per_page: 200
+  rate_limit_per_sec: 8
+  mailto_from_env: CROSSREF_EMAIL      # uses same email as Crossref polite pool
+
+elsevier:
+  base_url: "https://api.elsevier.com"
+  rate_limit_per_sec: 2
+  timeout_sec: 60
+  max_retries: 5
+  min_year: 2000                        # skip pre-2000 full text for v1
+
+ieee:
+  base_url: "https://ieeexploreapi.ieee.org/api/v1/search/articles"
+  rate_limit_per_sec: 5
+  max_records_per_call: 200
+  max_records_per_venue: 10000
+
+dedupe:
+  fuzzy_title_threshold: 95
+  min_surname_overlap: 1
+
+graph:
+  min_papers_per_author: 2
+  min_coauthor_edge_weight: 1
+  fa2_iterations: 500
+  fa2_scaling_ratio: 2.0
+  leiden_resolution: 1.0
+  betweenness_k: 1000           # Brandes pivot sampling (faster on >20k-node graphs)
+  ranking_top_k: 30               # rows per metric in author_rankings.json (mirrors Sun & Rahwan 2017)
+
+render:
+  top_hubs_count: 100
+  explorer_columns:
+    - title
+    - authors_short
+    - venue_short
+    - year
+    - cited_by_count
+    - doi
+
+# Manual merges for people split across OpenAlex author IDs (e.g. new papers
+# that haven't been disambiguated yet, ORCID missing on some records).
+# Each entry: `canonical` (display name) + list of OpenAlex IDs to collapse.
+# Runs in dedupe.py after the usual author_key assignment.
+author_aliases:
+  - canonical: "Seongjin Choi"
+    orcid: "0000-0001-7140-537X"
+    openalex_ids:
+      - A5082634431   # TR-C / TR-E / Trans Sci papers (primary)
+      - A5123205543   # T-ITS 2026 UAM paper (no ORCID in OA)
+      - A5126643171   # T-ITS 2026 NextSim paper (no ORCID in OA)
+  - canonical: "Jiwon Kim"
+    orcid: "0000-0001-6380-3001"
+    openalex_ids:
+      - A5047305393   # primary: UQ era, ORCID 0000-0001-6380-3001
+      - A5110491638   # Northwestern/early UQ (also caught by coauthor overlap)
+      - A5100462897   # Northwestern PhD era 2013-14 w/ Mahmassani (singleton, manual)
+      - A5048411553   # 2025 UQ singleton, author record "Jiwon Kim @ UQ"
+      - A5100462892   # 2013 Northwestern singleton (also caught by coauthor overlap)
+      - A5100462894   # 2024 UQ singleton, author record "Jiwon Kim @ UQ"

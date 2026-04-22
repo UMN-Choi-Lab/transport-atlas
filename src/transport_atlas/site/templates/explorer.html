@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}Explorer — Transport Atlas{% endblock %}
+{% block content %}
+<style>
+  .filters { background:var(--card); border:1px solid var(--border); border-radius:8px;
+             padding:14px 16px; margin-bottom:14px; }
+  .filters h2 { margin:0 0 10px; font-size:15px; font-weight:600; }
+  .filters .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  .filters .row.venue { gap:4px 10px; }
+  .filters label { font-size:12.5px; color:var(--muted); display:inline-flex;
+                   align-items:center; gap:6px; }
+  .filters .row.venue label { background:#f8fafc; border:1px solid var(--border);
+                              padding:3px 8px; border-radius:4px; font-size:12px; }
+  .filters .row.venue label input { margin:0; }
+  .filters .row.venue .yr { color:#94a3b8; font-size:10.5px; }
+  .filters .grouphdr { font-size:10.5px; color:#64748b; text-transform:uppercase;
+                       letter-spacing:.5px; font-weight:600; margin-right:6px; min-width:66px; }
+  .filters input[type=number], .filters input[type=text], .filters select {
+    padding:5px 8px; border:1px solid var(--border); border-radius:4px; font-size:13px;
+    background:var(--card); color:var(--fg);
+  }
+  .filters input[type=number] { width:80px; }
+  .filters input[type=text] { min-width:90px; width:110px; }
+  .filters .btn { padding:5px 14px; font-size:13px; border:1px solid var(--border);
+                  border-radius:4px; cursor:pointer; background:var(--accent); color:#fff;
+                  font-weight:500; }
+  .filters .btn:hover { background:#1a5ac9; }
+  .filters .btn.reset { background:var(--card); color:var(--muted); }
+  .filters .btn.reset:hover { background:#f1f5f9; color:var(--fg); }
+  .filters .btn.mini { padding:2px 8px; font-size:11px; background:var(--card);
+                       color:var(--muted); font-weight:400; }
+  .filters .btn.mini:hover { background:#f1f5f9; color:var(--fg); }
+  .filters .sep { width:1px; height:20px; background:var(--border); margin:0 4px; }
+  .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+           gap:10px; margin-bottom:14px; }
+  .stats .card { padding:10px 14px; }
+  .stats .num { font-size:22px; font-weight:700; }
+  .stats .lbl { color:var(--muted); font-size:11.5px; margin-top:2px;
+                text-transform:uppercase; letter-spacing:.4px; }
+  .result-info { color:var(--muted); font-size:13px; margin-left:auto; }
+  .result-info b { color:var(--fg); font-variant-numeric:tabular-nums; }
+  .live-toggle { font-size:11px; color:var(--muted); }
+  .tabulator { font-size:13px; }
+</style>
+
+<h2 style="margin:0 0 12px;">Explorer</h2>
+
+<div class="stats">
+  <div class="card"><div class="num" id="s-total">—</div><div class="lbl">Filtered papers</div></div>
+  <div class="card"><div class="num" id="s-authors">—</div><div class="lbl">Unique authors (est.)</div></div>
+  <div class="card"><div class="num" id="s-meancite">—</div><div class="lbl">Mean citations</div></div>
+  <div class="card"><div class="num" id="s-maxcite">—</div><div class="lbl">Max citations</div></div>
+  <div class="card"><div class="num" id="s-yearspan">—</div><div class="lbl">Year span</div></div>
+</div>
+
+<div class="filters">
+  <h2>Filters</h2>
+
+  <div class="row">
+    <label>Year
+      <input type="number" id="f-year-from" min="1950" max="2030" value="1950">
+      ~
+      <input type="number" id="f-year-to"   min="1950" max="2030" value="2030">
+    </label>
+
+    <span class="sep"></span>
+
+    <label>Min citations
+      <input type="number" id="f-mincite" min="0" value="0">
+    </label>
+
+    <span class="sep"></span>
+
+    <label>Title:
+      <input type="text" id="f-title-1" placeholder="word 1">
+      <input type="text" id="f-title-2" placeholder="word 2">
+      <input type="text" id="f-title-3" placeholder="word 3">
+      <select id="f-title-op">
+        <option value="AND">AND</option>
+        <option value="OR">OR</option>
+      </select>
+    </label>
+
+    <label>Author:
+      <input type="text" id="f-author" placeholder="author name" style="width:160px;">
+    </label>
+
+    <button class="btn" id="btn-apply">Apply</button>
+    <button class="btn reset" id="btn-reset">Reset</button>
+    <label class="live-toggle"><input type="checkbox" id="live-filter"> live</label>
+  </div>
+
+  <div id="venue-groups"></div>
+
+  <div class="row" style="margin-bottom:0;">
+    <div class="result-info" id="result-info">—</div>
+  </div>
+</div>
+
+<div id="tbl"></div>
+
+{% endblock %}
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.5/js/tabulator.min.js"></script>
+<script>
+const cacheBust = "{{ cache_bust }}";
+const venueGroupsDef = [
+  { name: 'Elsevier TR-family', venues: ['TR-A','TR-B','TR-C','TR-D','TR-E','TR-F'] },
+  { name: 'Elsevier (other)',   venues: ['AAP','JTG','TranspPol','TRIP','RTBM','TBS','JTTE','IJTST','JPT','AMAR','JUM','CommTR'] },
+  { name: 'IEEE',               venues: ['T-ITS','T-IV','ITS Mag','OJ-ITS'] },
+  { name: 'SAGE',               venues: ['TRR'] },
+  { name: 'Taylor & Francis',   venues: ['TranspRev','IJST'] },
+  { name: 'INFORMS',            venues: ['TransSci'] },
+  { name: 'Springer',           venues: ['ETRR','RailEng'] },
+  { name: 'Emerald',            venues: ['JICV'] },
+];
+
+const elStats = {
+  total: document.getElementById('s-total'),
+  authors: document.getElementById('s-authors'),
+  meancite: document.getElementById('s-meancite'),
+  maxcite: document.getElementById('s-maxcite'),
+  yearspan: document.getElementById('s-yearspan'),
+};
+const elInfo = document.getElementById('result-info');
+
+function fmt(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+
+fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rows => {
+  // ——— Precompute per-venue year ranges + global stats ———
+  const venueYears = new Map();   // venue -> {min, max, n}
+  let gYmin = Infinity, gYmax = -Infinity;
+  for (const r of rows) {
+    const v = r.venue_short, y = r.year;
+    if (!venueYears.has(v)) venueYears.set(v, { min: y, max: y, n: 0 });
+    const vy = venueYears.get(v);
+    if (y < vy.min) vy.min = y;
+    if (y > vy.max) vy.max = y;
+    vy.n++;
+    if (y < gYmin) gYmin = y;
+    if (y > gYmax) gYmax = y;
+  }
+
+  // Set year sliders to actual data range
+  const yf = document.getElementById('f-year-from');
+  const yt = document.getElementById('f-year-to');
+  yf.min = yt.min = gYmin; yf.max = yt.max = gYmax;
+  yf.value = gYmin; yt.value = gYmax;
+
+  // ——— Build venue checkbox groups ———
+  const groupsHost = document.getElementById('venue-groups');
+  groupsHost.innerHTML = venueGroupsDef.map(g => {
+    const chips = g.venues.filter(v => venueYears.has(v)).map(v => {
+      const vy = venueYears.get(v);
+      return `<label title="${v} · ${vy.n.toLocaleString()} papers">`
+           + `<input type="checkbox" class="v-cb" value="${v}" checked>`
+           + ` ${v} <span class="yr">(${vy.min}~${vy.max})</span></label>`;
+    }).join('');
+    if (!chips) return '';
+    return `<div class="row venue">`
+         + `<span class="grouphdr">${g.name}</span>`
+         + chips
+         + ` <button class="btn mini" data-group="${g.name}" data-act="none">none</button>`
+         + ` <button class="btn mini" data-group="${g.name}" data-act="all">all</button>`
+         + `</div>`;
+  }).join('')
+    + `<div class="row venue" style="margin-top:2px;">`
+    + `<span class="grouphdr">All venues</span>`
+    + `<button class="btn mini" id="v-all">select all</button>`
+    + `<button class="btn mini" id="v-none">clear all</button>`
+    + `</div>`;
+
+  // Wire per-group and global all/none
+  groupsHost.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'v-all' || b.id === 'v-none') {
+      const check = b.id === 'v-all';
+      document.querySelectorAll('.v-cb').forEach(cb => cb.checked = check);
+    } else if (b.dataset.group) {
+      const g = venueGroupsDef.find(x => x.name === b.dataset.group);
+      if (!g) return;
+      const check = b.dataset.act === 'all';
+      document.querySelectorAll('.v-cb').forEach(cb => {
+        if (g.venues.includes(cb.value)) cb.checked = check;
+      });
+    }
+    if (document.getElementById('live-filter').checked) applyFilters();
+  });
+
+  // ——— Tabulator table ———
+  const table = new Tabulator('#tbl', {
+    data: rows,
+    layout: 'fitColumns',
+    pagination: true,
+    paginationSize: 50,
+    paginationSizeSelector: [25, 50, 100, 250, 500],
+    initialSort: [{column:'year', dir:'desc'}, {column:'cited_by_count', dir:'desc'}],
+    columns: [
+      {title:'Title', field:'title', widthGrow:3, tooltip:true,
+       formatter:(c) => {
+         const doi = c.getRow().getData().doi;
+         const t = c.getValue() || '';
+         return doi ? `<a href="https://doi.org/${doi}" target="_blank" rel="noopener">${t}</a>` : t;
+       }},
+      {title:'Authors',  field:'authors_short', widthGrow:2, tooltip:true},
+      {title:'Venue',    field:'venue_short',   width:100},
+      {title:'Year',     field:'year',          width:72,  hozAlign:'right', sorter:'number'},
+      {title:'Cites',    field:'cited_by_count',width:80,  hozAlign:'right', sorter:'number'},
+    ],
+  });
+
+  // ——— Stats computation on current table view ———
+  function recomputeStats() {
+    const active = table.getData('active');
+    const n = active.length;
+    elStats.total.textContent = fmt(n);
+    if (!n) {
+      elStats.authors.textContent = '0';
+      elStats.meancite.textContent = '—';
+      elStats.maxcite.textContent = '—';
+      elStats.yearspan.textContent = '—';
+      return;
+    }
+    // Authors: rough count via last-name token set (authors_short is "A; B; C; +12")
+    const names = new Set();
+    let citeSum = 0, citeMax = 0, ymin = Infinity, ymax = -Infinity;
+    for (const r of active) {
+      citeSum += (r.cited_by_count || 0);
+      if (r.cited_by_count > citeMax) citeMax = r.cited_by_count;
+      if (r.year < ymin) ymin = r.year;
+      if (r.year > ymax) ymax = r.year;
+      if (r.authors_short) {
+        for (const a of r.authors_short.split(';')) {
+          const t = a.trim().replace(/^\+.*$/, '');
+          if (t) names.add(t);
+        }
+      }
+    }
+    elStats.authors.textContent = fmt(names.size) + (n > 0 ? '⁺' : '');
+    elStats.meancite.textContent = (citeSum / n).toFixed(1);
+    elStats.maxcite.textContent = fmt(citeMax);
+    elStats.yearspan.textContent = ymin + '–' + ymax;
+  }
+
+  function updateInfo() {
+    const shown = table.getDataCount('active');
+    const total = table.getDataCount();
+    elInfo.innerHTML = `Showing <b>${fmt(shown)}</b> / ${fmt(total)} papers`;
+    recomputeStats();
+  }
+  table.on('dataFiltered', updateInfo);
+  table.on('tableBuilt', updateInfo);
+
+  // ——— Filter application ———
+  function applyFilters() {
+    const ymin = parseInt(yf.value) || gYmin;
+    const ymax = parseInt(yt.value) || gYmax;
+    const cmin = parseInt(document.getElementById('f-mincite').value) || 0;
+    const t1 = document.getElementById('f-title-1').value.trim().toLowerCase();
+    const t2 = document.getElementById('f-title-2').value.trim().toLowerCase();
+    const t3 = document.getElementById('f-title-3').value.trim().toLowerCase();
+    const titleWords = [t1, t2, t3].filter(Boolean);
+    const titleOp = document.getElementById('f-title-op').value;
+    const author = document.getElementById('f-author').value.trim().toLowerCase();
+    const selectedVenues = new Set(
+      Array.from(document.querySelectorAll('.v-cb:checked')).map(cb => cb.value)
+    );
+
+    table.setFilter((row) => {
+      if (row.year < ymin || row.year > ymax) return false;
+      if ((row.cited_by_count || 0) < cmin) return false;
+      if (!selectedVenues.has(row.venue_short)) return false;
+      if (titleWords.length) {
+        const t = (row.title || '').toLowerCase();
+        const hits = titleWords.map(w => t.includes(w));
+        if (titleOp === 'AND' && !hits.every(Boolean)) return false;
+        if (titleOp === 'OR'  && !hits.some(Boolean))  return false;
+      }
+      if (author) {
+        const a = (row.authors_short || '').toLowerCase();
+        if (!a.includes(author)) return false;
+      }
+      return true;
+    });
+
+    syncUrlHash();
+  }
+
+  function resetFilters() {
+    yf.value = gYmin; yt.value = gYmax;
+    document.getElementById('f-mincite').value = 0;
+    document.getElementById('f-title-1').value = '';
+    document.getElementById('f-title-2').value = '';
+    document.getElementById('f-title-3').value = '';
+    document.getElementById('f-title-op').value = 'AND';
+    document.getElementById('f-author').value = '';
+    document.querySelectorAll('.v-cb').forEach(cb => cb.checked = true);
+    table.clearFilter(true);
+    syncUrlHash();
+  }
+
+  document.getElementById('btn-apply').addEventListener('click', applyFilters);
+  document.getElementById('btn-reset').addEventListener('click', resetFilters);
+
+  // ——— Live-filter mode (debounced) ———
+  let liveTimer = null;
+  function triggerIfLive() {
+    if (!document.getElementById('live-filter').checked) return;
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(applyFilters, 180);
+  }
+  const liveInputs = ['f-year-from','f-year-to','f-mincite','f-title-1','f-title-2','f-title-3','f-title-op','f-author'];
+  liveInputs.forEach(id => document.getElementById(id).addEventListener('input', triggerIfLive));
+  document.querySelectorAll('.v-cb').forEach(cb => cb.addEventListener('change', triggerIfLive));
+
+  // Enter anywhere in the filter bar applies
+  document.querySelector('.filters').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); applyFilters(); }
+  });
+
+  // ——— URL hash state (shareable filter links) ———
+  function syncUrlHash() {
+    const venues = Array.from(document.querySelectorAll('.v-cb')).map(cb => cb.checked ? '1' : '0').join('');
+    const s = new URLSearchParams();
+    s.set('y', `${yf.value}-${yt.value}`);
+    s.set('c', document.getElementById('f-mincite').value);
+    const tws = [document.getElementById('f-title-1').value,
+                 document.getElementById('f-title-2').value,
+                 document.getElementById('f-title-3').value];
+    if (tws.some(w => w.trim())) {
+      s.set('t', tws.join('|'));
+      s.set('op', document.getElementById('f-title-op').value);
+    }
+    const au = document.getElementById('f-author').value;
+    if (au) s.set('a', au);
+    if (venues.includes('0')) s.set('v', venues);
+    history.replaceState(null, '', '#' + s.toString());
+  }
+  function restoreFromHash() {
+    if (!location.hash) return;
+    const s = new URLSearchParams(location.hash.slice(1));
+    const y = s.get('y');
+    if (y && y.includes('-')) { const [a,b] = y.split('-'); yf.value = a; yt.value = b; }
+    if (s.has('c')) document.getElementById('f-mincite').value = s.get('c');
+    if (s.has('t')) {
+      const [a,b,c] = s.get('t').split('|');
+      document.getElementById('f-title-1').value = a || '';
+      document.getElementById('f-title-2').value = b || '';
+      document.getElementById('f-title-3').value = c || '';
+    }
+    if (s.has('op')) document.getElementById('f-title-op').value = s.get('op');
+    if (s.has('a'))  document.getElementById('f-author').value    = s.get('a');
+    if (s.has('v')) {
+      const mask = s.get('v');
+      document.querySelectorAll('.v-cb').forEach((cb, i) => {
+        if (i < mask.length) cb.checked = mask[i] === '1';
+      });
+    }
+    applyFilters();
+  }
+  restoreFromHash();
+});
+</script>
+{% endblock %}

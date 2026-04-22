@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Combined View — Coauthors × Topics</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; height:100%; font-family:-apple-system,"Segoe UI",sans-serif;
+               background:#0f1117; color:#e5e7eb; overflow:hidden; }
+  canvas { display:block; background:#0f1117; }
+  a { color:#38bdf8; }
+  .panel { position:fixed; background:rgba(17,24,39,0.92); color:#e5e7eb;
+           border:1px solid #374151; border-radius:8px; padding:12px 14px;
+           font-size:12.5px; backdrop-filter:blur(6px); }
+  #info { top:14px; left:14px; max-width:360px; max-height:calc(100vh - 28px); overflow-y:auto; }
+  #info h1 { font-size:15px; margin:0 0 6px; font-weight:600; color:#f3f4f6; }
+  #info .home { display:block; font-size:11px; letter-spacing:.3px; color:#6b7280;
+                text-decoration:none; margin-bottom:4px; }
+  #info .home:hover { color:#38bdf8; }
+  #info .meta { color:#9ca3af; font-size:11px; margin-bottom:8px; line-height:1.6; }
+  #info .meta .count { color:#e5e7eb; font-size:12.5px; font-weight:600; line-height:1.35; }
+  #info .meta .params { color:#6b7280; font-size:10.5px; margin-top:2px; }
+  #info button, #info select, #info input {
+    font-size:11px; padding:4px 8px; background:#1f2937; color:#e5e7eb;
+    border:1px solid #374151; border-radius:4px; cursor:pointer;
+  }
+  #info button:hover { background:#374151; }
+  #search { width:100%; padding:5px 8px; font-size:12px; background:#1f2937;
+            color:#e5e7eb; border:1px solid #374151; border-radius:4px; outline:none; }
+  #search:focus { border-color:#38bdf8; }
+  #results { margin-top:6px; max-height:220px; overflow-y:auto; }
+  .result-item { padding:4px 8px; cursor:pointer; display:flex; justify-content:space-between;
+                 gap:8px; border-radius:3px; font-size:12px; }
+  .result-item:hover { background:#374151; }
+  .result-item .count { color:#9ca3af; font-variant-numeric:tabular-nums; }
+  .radio-row { display:flex; gap:12px; margin-top:6px; font-size:11px; color:#9ca3af; flex-wrap:wrap; }
+  .radio-row label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+  #selected { margin-top:10px; padding-top:8px; border-top:1px solid #374151; min-height:28px; }
+  #selected .name { font-weight:600; color:#38bdf8; font-size:13px; }
+  #selected .stat { color:#9ca3af; font-size:11px; margin-top:2px; }
+  #selected .header { color:#9ca3af; font-size:11px; margin:10px 0 3px; }
+  .link-item { padding:3px 6px; cursor:pointer; display:flex; justify-content:space-between;
+               gap:8px; border-radius:3px; font-size:11.5px; }
+  .link-item:hover { background:#374151; }
+  .link-item .pct { color:#9ca3af; font-variant-numeric:tabular-nums; font-size:10.5px; }
+  .coauth-color   { color:#34d399; }  /* green — real collab */
+  .phantom-color  { color:#fbbf24; }  /* amber — phantom ⚡ */
+  #legend { bottom:14px; right:14px; font-size:11px; color:#9ca3af; max-width:500px; }
+  #tooltip { position:fixed; background:#1f2937; color:#e5e7eb; padding:8px 10px;
+             border-radius:4px; font-size:12px; pointer-events:none; display:none; z-index:100;
+             max-width:340px; box-shadow:0 4px 14px rgba(0,0,0,.5); border:1px solid #374151; }
+  #tooltip .tt-name { font-weight:600; color:#f3f4f6; }
+  #tooltip .tt-stat { color:#9ca3af; font-size:11px; margin-top:2px; }
+  #tooltip .tt-comm { margin-top:6px; padding-top:6px; border-top:1px solid #374151;
+                      font-size:11px; line-height:1.55; }
+  #tooltip .tt-comm .co  { color:#38bdf8; }
+  #tooltip .tt-comm .sc  { color:#c084fc; }
+  #tooltip .tt-comm .kw  { color:#9ca3af; }
+  .slider-row { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .slider-row input[type=range] { flex:1; }
+  .slider-row .val { font-variant-numeric:tabular-nums; min-width:42px; text-align:right; color:#9ca3af; }
+  .slider-row .lbl { font-size:11px; color:#9ca3af; min-width:88px; }
+  details.forces { margin-top:10px; border-top:1px solid #374151; padding-top:6px; }
+  details.forces > summary { font-size:12px; color:#cbd5e1; cursor:pointer; padding:2px 0;
+                             list-style:none; user-select:none; }
+  details.forces > summary::before { content:'▸ '; color:#6b7280; }
+  details.forces[open] > summary::before { content:'▾ '; }
+  details.forces .group { font-size:10.5px; color:#6b7280; margin-top:8px;
+                          text-transform:uppercase; letter-spacing:.5px; }
+  details.forces .reset { margin-top:8px; font-size:11px; padding:3px 10px;
+                          background:#1f2937; color:#9ca3af; border:1px solid #374151;
+                          border-radius:4px; cursor:pointer; }
+  details.forces .reset:hover { background:#374151; color:#e5e7eb; }
+</style>
+</head>
+<body>
+<canvas id="net"></canvas>
+<div class="panel" id="info">
+  <a href="https://choi-seongjin.github.io/" class="home" style="color:#6b7280;">← Choi Lab</a>
+  <a href="index.html" class="home">← Transport Atlas</a>
+  <h1>Coauthors × Topics</h1>
+  <div class="meta" id="meta-text"></div>
+
+  <div class="radio-row" title="Which community structure drives node color">
+    Color:
+    <label><input type="radio" name="cmode" value="combined" checked> combined</label>
+    <label><input type="radio" name="cmode" value="semantic"> semantic</label>
+    <label><input type="radio" name="cmode" value="coauthor"> coauthor</label>
+  </div>
+
+  <div class="radio-row" title="Overlay semantic-kNN edges on the coauthor layout">
+    Phantom edges:
+    <label><input type="radio" name="pmode" value="selected" checked> selected only</label>
+    <label><input type="radio" name="pmode" value="all"> all (top-3 per author)</label>
+    <label><input type="radio" name="pmode" value="off"> off</label>
+  </div>
+
+  <div class="slider-row" title="Coauthor-edge weight threshold (≥ N co-authored papers)">
+    <span style="font-size:11px;">Edge threshold</span>
+    <input type="range" id="edge-slider" min="1" max="20" value="3">
+    <span class="val" id="edge-val">3</span>
+  </div>
+
+  <details class="forces" title="Live-tune the force simulation. Values apply instantly.">
+    <summary>Layout forces</summary>
+
+    <div class="group">Coauthor link</div>
+    <div class="slider-row"><span class="lbl">strength</span>
+      <input type="range" id="f-coauth-str" min="0" max="1" step="0.01" value="0.25">
+      <span class="val" id="f-coauth-str-v">0.25</span></div>
+    <div class="slider-row"><span class="lbl">distance</span>
+      <input type="range" id="f-coauth-dist" min="5" max="120" step="1" value="32">
+      <span class="val" id="f-coauth-dist-v">32</span></div>
+
+    <div class="group">Semantic link (mutual top-K)</div>
+    <div class="slider-row"><span class="lbl">strength</span>
+      <input type="range" id="f-sem-str" min="0" max="0.5" step="0.01" value="0.08">
+      <span class="val" id="f-sem-str-v">0.08</span></div>
+    <div class="slider-row"><span class="lbl">base distance</span>
+      <input type="range" id="f-sem-dist" min="10" max="200" step="1" value="60">
+      <span class="val" id="f-sem-dist-v">60</span></div>
+
+    <div class="group">Global</div>
+    <div class="slider-row"><span class="lbl">charge (repel)</span>
+      <input type="range" id="f-charge" min="-400" max="0" step="5" value="-60">
+      <span class="val" id="f-charge-v">-60</span></div>
+    <div class="slider-row"><span class="lbl">center pull</span>
+      <input type="range" id="f-center" min="0" max="0.2" step="0.005" value="0.03">
+      <span class="val" id="f-center-v">0.03</span></div>
+    <div class="slider-row"><span class="lbl">collide pad</span>
+      <input type="range" id="f-collide" min="0" max="12" step="0.5" value="2">
+      <span class="val" id="f-collide-v">2</span></div>
+
+    <div class="group">Community cohesion (pull same-community → centroid)</div>
+    <div class="slider-row"><span class="lbl">strength</span>
+      <input type="range" id="f-cluster-str" min="0" max="0.4" step="0.01" value="0">
+      <span class="val" id="f-cluster-str-v">0.00</span></div>
+    <div class="radio-row" style="margin-top:4px;">
+      <label><input type="radio" name="cluster-mode" value="combined" checked> combined (cc)</label>
+      <label><input type="radio" name="cluster-mode" value="coauthor"> coauthor</label>
+      <label><input type="radio" name="cluster-mode" value="semantic"> semantic</label>
+    </div>
+
+    <div class="group">Simulation</div>
+    <div class="slider-row"><span class="lbl">alpha decay</span>
+      <input type="range" id="f-decay" min="0.005" max="0.1" step="0.001" value="0.028">
+      <span class="val" id="f-decay-v">0.028</span></div>
+
+    <button class="reset" id="f-reset" title="Restore defaults">Reset forces</button>
+  </details>
+
+  <div style="margin-top:10px;">
+    <input type="text" id="search" placeholder="Search author name…" autocomplete="off">
+    <div id="results"></div>
+  </div>
+
+  <div id="selected"></div>
+</div>
+
+<div class="panel" id="legend">
+  <div style="color:#cbd5e1;margin-bottom:3px;">
+    Layout: force-directed on coauthor edges (same as the coauthor network). Color = Leiden
+    community <b>of your choice</b> — compare where collaboration and topic diverge.
+  </div>
+  <div style="color:#9ca3af;">
+    <span style="color:#9ca3af;">● grey</span> coauthor edge ·
+    <span class="phantom-color">● amber</span> phantom — semantic top-3 that never coauthored.
+    Click a node to see its direct collaborators (green) vs phantom colleagues (amber) side-by-side.
+  </div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-stat" id="tt-stat"></div>
+  <div class="tt-comm" id="tt-comm"></div>
+</div>
+
+<script>
+const cacheBust = "{{ cache_bust }}";
+const canvas = document.getElementById('net');
+const ctx = canvas.getContext('2d');
+let width = canvas.width = window.innerWidth;
+let height = canvas.height = window.innerHeight;
+const metaEl = document.getElementById('meta-text');
+metaEl.innerHTML = '<div class="count">Loading…</div><div class="params">fetching assets</div>';
+
+(async function boot() {
+let DATA, SIMILAR = {}, TC = {}, SEMCOMMS = [], COMBCOMMS = [];
+try {
+  [DATA, SIMILAR, TC, SEMCOMMS, COMBCOMMS] = await Promise.all([
+    fetch(`data/coauthor_network.json?v=${cacheBust}`).then(r => r.json()),
+    fetch(`data/author_similar.json?v=${cacheBust}`).then(r => r.json()).catch(() => ({})),
+    fetch(`data/topic_coords.json?v=${cacheBust}`).then(r => r.json()).catch(() => ({})),
+    fetch(`data/semantic_communities.json?v=${cacheBust}`).then(r => r.json()).catch(() => []),
+    fetch(`data/combined_communities.json?v=${cacheBust}`).then(r => r.ok ? r.json() : []).catch(() => []),
+  ]);
+} catch (err) {
+  metaEl.innerHTML = '<div class="count" style="color:#f87171;">Failed to load</div>'
+    + '<div class="params">' + (err.message || err) + '</div>';
+  return;
+}
+const META = DATA.meta;
+const nodes = DATA.nodes.map(n => ({ ...n }));
+const nodeById = new Map(nodes.map(n => [n.id, n]));
+// Attach semantic + combined community from topic_coords
+for (const n of nodes) {
+  const co = TC[String(n.id)];
+  n.sc = co ? co.sc : null;
+  n.cc = co ? co.cc : null;
+}
+const rawEdges = DATA.edges;  // {source, target, weight}
+// D3 will convert source/target to references on first tick; store original indices.
+for (const e of rawEdges) {
+  e.sIdx = e.source; e.tIdx = e.target;
+}
+let edgeThresh = 3;
+let edges = rawEdges.filter(e => (e.weight ?? 1) >= edgeThresh);
+edges.forEach(e => { e.source = e.sIdx; e.target = e.tIdx; });
+
+// Community color maps
+const coauthorColor = new Map();
+const coauthorLabel = new Map();
+if (META.communities) {
+  for (const c of META.communities) {
+    coauthorColor.set(c.id, c.color);
+    coauthorLabel.set(c.id, (c.label_words || []).slice(0, 3).join(' · '));
+  }
+}
+const semanticColor = new Map();
+const semanticLabel = new Map();
+for (const c of SEMCOMMS) {
+  semanticColor.set(c.id, c.color);
+  semanticLabel.set(c.id, (c.label_words || []).slice(0, 3).join(' · '));
+}
+const combinedColor = new Map();
+const combinedLabel = new Map();
+const miscCombinedIds = new Set();
+for (const c of COMBCOMMS) {
+  combinedColor.set(c.id, c.color);
+  combinedLabel.set(c.id, (c.label_words || []).slice(0, 3).join(' · '));
+  if (c.misc) miscCombinedIds.add(c.id);
+}
+const miscCoauthorIds = new Set();
+if (META.communities) {
+  for (const c of META.communities) if (c.misc) miscCoauthorIds.add(c.id);
+}
+function isMisc(n) {
+  return miscCombinedIds.has(n.cc) || miscCoauthorIds.has(n.community);
+}
+let COLOR_MODE = 'combined';
+function nodeColor(n) {
+  if (COLOR_MODE === 'combined') return combinedColor.get(n.cc) || '#444';
+  if (COLOR_MODE === 'semantic') return semanticColor.get(n.sc) || '#444';
+  return coauthorColor.get(n.community) || '#444';
+}
+
+metaEl.innerHTML =
+  `<div class="count">${META.nodes.toLocaleString()} authors · `
+  + `${META.edges.toLocaleString()} coauthor edges · `
+  + `${COMBCOMMS.length} combined / ${SEMCOMMS.length} semantic comms</div>`
+  + `<div class="params">coauthor layout · combined Leiden on multiplex (coauthor + semantic) edges</div>`;
+
+const rScale = d3.scaleSqrt().domain([1, d3.max(nodes, d => d.papers) || 10]).range([1.8, 9]);
+const eScale = d3.scaleSqrt().domain([1, 20]).range([0.35, 3.2]).clamp(true);
+
+// Random seed — let the coauthor + semantic forces shape the layout from scratch.
+// Earlier versions ring-seeded by combined-community and added a centroid-pull force,
+// but that produced a visibly over-clustered "beaded" look. Keeping it loose.
+{
+  const cx = width / 2, cy = height / 2;
+  const R = Math.min(width, height) * 0.40;
+  for (const n of nodes) {
+    n.x = cx + (Math.random() - 0.5) * R * 2;
+    n.y = cy + (Math.random() - 0.5) * R * 2;
+  }
+}
+
+// Soft semantic link set — weak attractive ties between mutual top-3 semantic neighbors.
+// Drawn into the simulation alongside coauthor edges so the layout reflects BOTH signals,
+// not just collaboration. Strength held much lower than coauthor (0.08 vs 0.3) so
+// co-authorship remains the dominant spatial backbone.
+const semLinks = (() => {
+  const K = 3;
+  const topSet = new Map();
+  for (const [nid, sims] of Object.entries(SIMILAR)) {
+    const a = +nid;
+    const s = new Set();
+    for (let i = 0; i < Math.min(K, sims.length); i++) s.add(sims[i].id);
+    topSet.set(a, s);
+  }
+  const pairs = new Map();
+  for (const [nid, sims] of Object.entries(SIMILAR)) {
+    const a = +nid;
+    for (let i = 0; i < Math.min(K, sims.length); i++) {
+      const b = sims[i].id;
+      if (a === b || !nodeById.has(b)) continue;
+      const other = topSet.get(b);
+      if (!other || !other.has(a)) continue;
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      if (!pairs.has(key)) pairs.set(key, {
+        source: a < b ? a : b, target: a < b ? b : a, sim: sims[i].sim,
+      });
+    }
+  }
+  return Array.from(pairs.values());
+})();
+
+// Community-cohesion force. Skip misc community (13k heterogeneous authors merged into
+// one bucket from <10-member island collapse) — pulling them all to one centroid creates
+// a huge grey blob. Misc nodes just drift freely instead.
+function communityForce(getCid, strength = 0.08) {
+  let nodesRef = null;
+  const centroids = new Map();
+  function f(alpha) {
+    centroids.clear();
+    for (const n of nodesRef) {
+      const c = getCid(n);
+      if (c == null || isMisc(n)) continue;
+      const ce = centroids.get(c) || { x: 0, y: 0, n: 0 };
+      ce.x += n.x; ce.y += n.y; ce.n += 1;
+      centroids.set(c, ce);
+    }
+    for (const ce of centroids.values()) { ce.x /= ce.n; ce.y /= ce.n; }
+    for (const n of nodesRef) {
+      if (isMisc(n)) continue;
+      const ce = centroids.get(getCid(n));
+      if (!ce) continue;
+      n.vx += (ce.x - n.x) * strength * alpha;
+      n.vy += (ce.y - n.y) * strength * alpha;
+    }
+  }
+  f.initialize = (n) => { nodesRef = n; };
+  f.strength = (s) => { strength = s; return f; };
+  return f;
+}
+
+// Force parameters — single source of truth, mutated by the Forces panel sliders.
+const F = {
+  coauthStr: 0.25, coauthDist: 32,
+  semStr: 0.08,    semBaseDist: 60,
+  charge: -60,     centerStr: 0.03, collidePad: 2,
+  clusterStr: 0,   clusterMode: 'combined',
+  decay: 0.028,
+};
+const F_DEFAULTS = { ...F };
+
+function clusterCid(n) {
+  if (F.clusterMode === 'coauthor') return n.community;
+  if (F.clusterMode === 'semantic') return n.sc;
+  return n.cc;
+}
+
+let simulation = d3.forceSimulation(nodes)
+  .force('coauth',   d3.forceLink(edges).id(d => d.id).distance(F.coauthDist).strength(F.coauthStr))
+  .force('semantic', d3.forceLink(semLinks).id(d => d.id)
+    .distance(d => F.semBaseDist * (1.2 - d.sim)).strength(F.semStr))
+  .force('charge',   d3.forceManyBody().strength(F.charge))
+  .force('center',   d3.forceCenter(width / 2, height / 2).strength(F.centerStr))
+  .force('collide',  d3.forceCollide().radius(d => rScale(d.papers) + F.collidePad))
+  .force('cluster',  communityForce(clusterCid, F.clusterStr))
+  .alphaDecay(F.decay)
+  .on('tick', draw)
+  .on('end', () => fitToView());
+console.log(`[combined] forces: ${edges.length} coauthor links · ${semLinks.length} semantic links`);
+
+// ——— Forces panel: live-tune parameters without reload ———
+function bumpSim() { simulation.alpha(0.3).restart(); }
+function bindSlider(id, key, fmt, onChange) {
+  const el = document.getElementById(id);
+  const out = document.getElementById(id + '-v') || document.getElementById(id.replace(/-str$/, '-v'));
+  el.addEventListener('input', () => {
+    F[key] = +el.value;
+    if (out) out.textContent = fmt(F[key]);
+    onChange();
+  });
+  return el;
+}
+const f2 = v => (+v).toFixed(2);
+const f3 = v => (+v).toFixed(3);
+const fi = v => Math.round(+v).toString();
+
+bindSlider('f-coauth-str',  'coauthStr',   f2, () => { simulation.force('coauth').strength(F.coauthStr); bumpSim(); });
+bindSlider('f-coauth-dist', 'coauthDist',  fi, () => { simulation.force('coauth').distance(F.coauthDist); bumpSim(); });
+bindSlider('f-sem-str',     'semStr',      f2, () => { simulation.force('semantic').strength(F.semStr); bumpSim(); });
+bindSlider('f-sem-dist',    'semBaseDist', fi, () => {
+  simulation.force('semantic').distance(d => F.semBaseDist * (1.2 - d.sim)); bumpSim();
+});
+bindSlider('f-charge',      'charge',      fi, () => { simulation.force('charge').strength(F.charge); bumpSim(); });
+bindSlider('f-center',      'centerStr',   f3, () => { simulation.force('center').strength(F.centerStr); bumpSim(); });
+bindSlider('f-collide',     'collidePad',  f2, () => {
+  simulation.force('collide').radius(d => rScale(d.papers) + F.collidePad); bumpSim();
+});
+bindSlider('f-cluster-str', 'clusterStr',  f2, () => { simulation.force('cluster').strength(F.clusterStr); bumpSim(); });
+bindSlider('f-decay',       'decay',       f3, () => { simulation.alphaDecay(F.decay); });
+
+document.querySelectorAll('input[name="cluster-mode"]').forEach(r => r.addEventListener('change', (e) => {
+  F.clusterMode = e.target.value;
+  simulation.force('cluster', communityForce(clusterCid, F.clusterStr));
+  bumpSim();
+}));
+
+document.getElementById('f-reset').addEventListener('click', () => {
+  Object.assign(F, F_DEFAULTS);
+  const map = [
+    ['f-coauth-str',  F.coauthStr,  f2], ['f-coauth-dist', F.coauthDist, fi],
+    ['f-sem-str',     F.semStr,     f2], ['f-sem-dist',    F.semBaseDist, fi],
+    ['f-charge',      F.charge,     fi], ['f-center',      F.centerStr,  f3],
+    ['f-collide',     F.collidePad, f2], ['f-cluster-str', F.clusterStr, f2],
+    ['f-decay',       F.decay,      f3],
+  ];
+  for (const [id, v, fmt] of map) {
+    const el = document.getElementById(id);
+    if (el) el.value = v;
+    const out = document.getElementById(id + '-v');
+    if (out) out.textContent = fmt(v);
+  }
+  document.querySelector('input[name="cluster-mode"][value="combined"]').checked = true;
+  simulation.force('coauth').strength(F.coauthStr).distance(F.coauthDist);
+  simulation.force('semantic').strength(F.semStr).distance(d => F.semBaseDist * (1.2 - d.sim));
+  simulation.force('charge').strength(F.charge);
+  simulation.force('center').strength(F.centerStr);
+  simulation.force('collide').radius(d => rScale(d.papers) + F.collidePad);
+  simulation.force('cluster', communityForce(clusterCid, F.clusterStr));
+  simulation.alphaDecay(F.decay);
+  bumpSim();
+});
+
+let transform = d3.zoomIdentity;
+const zoom = d3.zoom().scaleExtent([0.02, 8]).on('zoom', (e) => { transform = e.transform; draw(); });
+d3.select(canvas).call(zoom);
+
+function fitToView(pad = 0.9) {
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const n of nodes) {
+    if (n.x < xmin) xmin = n.x; if (n.x > xmax) xmax = n.x;
+    if (n.y < ymin) ymin = n.y; if (n.y > ymax) ymax = n.y;
+  }
+  const w = Math.max(xmax - xmin, 1), h = Math.max(ymax - ymin, 1);
+  const k = Math.min(width / w, height / h) * pad;
+  const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  const tx = width / 2 - cx * k, ty = height / 2 - cy * k;
+  d3.select(canvas).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+}
+setTimeout(() => fitToView(), 1500);
+
+let selected = null;
+let PHANTOM_MODE = 'selected';
+
+// Global phantom-edges cache (built once): mutual top-3 phantom-only
+const phantomAllEdges = (() => {
+  const K = 3;
+  const topSet = new Map();
+  for (const [nid, sims] of Object.entries(SIMILAR)) {
+    const a = +nid;
+    const s = new Set();
+    for (let i = 0; i < Math.min(K, sims.length); i++) {
+      if (sims[i].phantom) s.add(sims[i].id);
+    }
+    topSet.set(a, s);
+  }
+  const pairs = new Map();
+  for (const [nid, sims] of Object.entries(SIMILAR)) {
+    const a = +nid;
+    for (let i = 0; i < Math.min(K, sims.length); i++) {
+      const s = sims[i];
+      if (!s.phantom) continue;
+      const b = s.id; if (a === b || !nodeById.has(b)) continue;
+      const other = topSet.get(b);
+      if (!other || !other.has(a)) continue;
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      if (!pairs.has(key)) pairs.set(key, { a, b, sim: s.sim });
+    }
+  }
+  return Array.from(pairs.values());
+})();
+console.log(`[combined] ${phantomAllEdges.length} mutual-phantom edges`);
+
+function draw() {
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+  ctx.lineCap = 'round';
+  const wMult = Math.max(1, 1 / transform.k);
+
+  // Coauthor edges (background)
+  ctx.strokeStyle = 'rgba(156,163,175,0.18)';
+  for (const e of edges) {
+    const s = (typeof e.source === 'object') ? e.source : nodeById.get(e.source);
+    const t = (typeof e.target === 'object') ? e.target : nodeById.get(e.target);
+    if (!s || !t) continue;
+    ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * wMult;
+    ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+  }
+
+  // Phantom edges overlay
+  if (PHANTOM_MODE === 'all') {
+    ctx.strokeStyle = 'rgba(251,191,36,0.20)';
+    ctx.lineWidth = 0.6 * wMult;
+    for (const p of phantomAllEdges) {
+      const s = nodeById.get(p.a), t = nodeById.get(p.b); if (!s || !t) continue;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    }
+  }
+  if (selected && PHANTOM_MODE !== 'off') {
+    const sims = SIMILAR[String(selected.id)] || [];
+    ctx.lineWidth = 1.8 * wMult;
+    for (const ss of sims) {
+      if (!ss.phantom) continue;
+      const t = nodeById.get(ss.id); if (!t) continue;
+      ctx.strokeStyle = 'rgba(251,191,36,0.9)';
+      ctx.beginPath(); ctx.moveTo(selected.x, selected.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    }
+    // Also highlight coauthor edges of selected in bright green
+    ctx.strokeStyle = 'rgba(52,211,153,0.9)';
+    for (const e of edges) {
+      const s = (typeof e.source === 'object') ? e.source : nodeById.get(e.source);
+      const t = (typeof e.target === 'object') ? e.target : nodeById.get(e.target);
+      if (!s || !t) continue;
+      if (s !== selected && t !== selected) continue;
+      ctx.beginPath(); ctx.lineWidth = eScale(e.weight) * wMult * 1.6;
+      ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    }
+  }
+
+  // Nodes — dim misc-bucket authors so they don't dominate the frame
+  const nodeMult = Math.min(8, Math.pow(Math.max(1 / transform.k, 1), 0.75));
+  for (const n of nodes) {
+    const misc = isMisc(n);
+    ctx.globalAlpha = misc && n !== selected ? 0.22 : 1.0;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, rScale(n.papers) * nodeMult * (misc ? 0.7 : 1.0), 0, Math.PI * 2);
+    ctx.fillStyle = nodeColor(n); ctx.fill();
+    if (n === selected) {
+      ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2 / transform.k; ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1.0;
+
+  // Labels on zoom-in
+  if (transform.k > 0.25) {
+    const fontPx = Math.max(9, 11 / transform.k);
+    ctx.font = `${fontPx}px -apple-system,sans-serif`;
+    ctx.fillStyle = 'rgba(229,231,235,0.9)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    let minPapers;
+    if      (transform.k >= 2.0) minPapers = 0;
+    else if (transform.k >= 1.2) minPapers = 8;
+    else if (transform.k >= 0.8) minPapers = 20;
+    else if (transform.k >= 0.5) minPapers = 40;
+    else                         minPapers = 80;
+    for (const n of nodes) {
+      if (n.papers < minPapers && n !== selected) continue;
+      const r = rScale(n.papers) * nodeMult;
+      ctx.fillText(n.label, n.x, n.y + r + 2);
+    }
+  } else if (selected) {
+    ctx.font = `${12 / transform.k}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#38bdf8'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(selected.label, selected.x, selected.y + rScale(selected.papers) * nodeMult + 2);
+  }
+  ctx.restore();
+}
+
+function nodeAtScreen(sx, sy) {
+  const x = (sx - transform.x) / transform.k;
+  const y = (sy - transform.y) / transform.k;
+  const nodeMult = Math.min(8, Math.pow(Math.max(1 / transform.k, 1), 0.75));
+  let best = null, bestD = Infinity;
+  const tol = 8 / transform.k;
+  for (const n of nodes) {
+    const dx = n.x - x, dy = n.y - y;
+    const d2 = dx*dx + dy*dy;
+    const r = rScale(n.papers) * nodeMult + 1.5 / transform.k + tol;
+    if (d2 < r * r && d2 < bestD) { best = n; bestD = d2; }
+  }
+  return best;
+}
+
+const tip = document.getElementById('tooltip');
+const ttName = document.getElementById('tt-name');
+const ttStat = document.getElementById('tt-stat');
+const ttComm = document.getElementById('tt-comm');
+canvas.addEventListener('mousemove', (e) => {
+  const n = nodeAtScreen(e.clientX, e.clientY);
+  if (n) {
+    canvas.style.cursor = 'pointer';
+    ttName.textContent = n.label;
+    const pLinks = [];
+    if (n.orcid) pLinks.push(`ORCID ${n.orcid.slice(-10)}`);
+    const oaId = n.oa || (n.key && n.key.startsWith('a') ? n.key.toUpperCase() : null);
+    if (oaId) pLinks.push(`OA ${oaId}`);
+    ttStat.textContent = `${n.papers} papers · last ${n.last_year ?? '—'}`
+      + (pLinks.length ? ' · click node for profile links' : '');
+    const coLbl = coauthorLabel.get(n.community);
+    const scLbl = semanticLabel.get(n.sc);
+    const ccLbl = combinedLabel.get(n.cc);
+    ttComm.innerHTML =
+      `<span class="co">coauthor ${n.community ?? '—'}</span>`
+      + (coLbl ? ` <span class="kw">${esc(coLbl)}</span>` : '')
+      + (n.sc != null
+          ? `<br><span class="sc">semantic ${n.sc}</span>` + (scLbl ? ` <span class="kw">${esc(scLbl)}</span>` : '')
+          : '')
+      + (n.cc != null
+          ? `<br><span style="color:#fcd34d;">combined ${n.cc}</span>` + (ccLbl ? ` <span class="kw">${esc(ccLbl)}</span>` : '')
+          : '');
+    let x = e.clientX + 10, y = e.clientY + 10;
+    if (x + 360 > window.innerWidth) x = e.clientX - 360;
+    if (y + 140 > window.innerHeight) y = e.clientY - 140;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.display = 'block';
+  } else { canvas.style.cursor = 'grab'; tip.style.display = 'none'; }
+});
+canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+canvas.addEventListener('click', (e) => {
+  selected = nodeAtScreen(e.clientX, e.clientY);
+  renderSelected(); draw();
+});
+
+function renderSelected() {
+  const box = document.getElementById('selected');
+  if (!selected) { box.innerHTML = ''; return; }
+  const directCoauths = [];
+  for (const e of edges) {
+    const s = (typeof e.source === 'object') ? e.source : nodeById.get(e.source);
+    const t = (typeof e.target === 'object') ? e.target : nodeById.get(e.target);
+    if (!s || !t) continue;
+    if (s === selected) directCoauths.push({ n: t, w: e.weight });
+    else if (t === selected) directCoauths.push({ n: s, w: e.weight });
+  }
+  directCoauths.sort((a, b) => b.w - a.w);
+  const sims = SIMILAR[String(selected.id)] || [];
+  const phantoms = sims.filter(s => s.phantom).slice(0, 8);
+
+  // Profile-link builder. ORCID preferred (author-curated), OpenAlex as fallback.
+  function profileLinks(obj) {
+    const parts = [];
+    if (obj.orcid) {
+      parts.push(`<a href="https://orcid.org/${esc(obj.orcid)}" target="_blank" rel="noopener" `
+        + `title="ORCID profile" style="color:#a3e635;font-size:10px;margin-left:4px;">iD</a>`);
+    }
+    const oaId = obj.oa || (obj.key && obj.key.startsWith('a') ? obj.key.toUpperCase() : null);
+    if (oaId) {
+      parts.push(`<a href="https://openalex.org/${esc(oaId)}" target="_blank" rel="noopener" `
+        + `title="OpenAlex profile" style="color:#38bdf8;font-size:10px;margin-left:4px;">OA</a>`);
+    }
+    return parts.join('');
+  }
+  const phantomsAll = sims.filter(s => s.phantom);
+  let html = `<div class="name">${esc(selected.label)} ${profileLinks(selected)}</div>`
+    + `<div class="stat">${selected.papers} papers · ${directCoauths.length} coauthors · `
+    + `<span class="phantom-color">${phantomsAll.length} phantoms ⚡</span> · `
+    + `coauth-comm ${selected.community ?? '—'}`
+    + (selected.sc != null ? ` · sem ${selected.sc}` : '')
+    + (selected.cc != null ? ` · comb ${selected.cc}` : '')
+    + `</div>`;
+  // Phantoms FIRST — the main point of this view.
+  html += `<div class="header"><span class="phantom-color">⚡</span> Phantom colleagues (top 5 of ${phantomsAll.length}):</div>`;
+  html += '<div>';
+  for (const s of phantomsAll.slice(0, 5)) {
+    html += `<div class="link-item" data-id="${s.id}">`
+      + `<span class="phantom-color">${esc(s.name)}</span>${profileLinks(s)}`
+      + `<span class="pct">${(s.sim * 100).toFixed(0)}%</span></div>`;
+  }
+  if (!phantomsAll.length) html += '<div style="color:#6b7280;font-size:11px;">(none — all your top semantic matches already coauthor with you)</div>';
+  html += '</div>';
+  html += `<div class="header"><span class="coauth-color">●</span> Direct coauthors (top 5 of ${directCoauths.length}):</div>`;
+  html += '<div>';
+  for (const { n, w } of directCoauths.slice(0, 5)) {
+    html += `<div class="link-item" data-id="${n.id}">`
+      + `<span class="coauth-color">${esc(n.label)}</span>${profileLinks(n)}`
+      + `<span class="pct">${w} pap</span></div>`;
+  }
+  if (!directCoauths.length) html += '<div style="color:#6b7280;font-size:11px;">(none above edge threshold)</div>';
+  html += '</div>';
+  box.innerHTML = html;
+  box.querySelectorAll('.link-item').forEach(el => el.addEventListener('click', (ev) => {
+    if (ev.target.tagName === 'A') return;  // profile link: let the navigation happen
+    const n = nodeById.get(+el.dataset.id);
+    if (n) { selected = n; renderSelected(); draw(); }
+  }));
+}
+
+// Controls
+document.querySelectorAll('input[name="cmode"]').forEach(r => r.addEventListener('change', (e) => {
+  COLOR_MODE = e.target.value; draw();
+}));
+document.querySelectorAll('input[name="pmode"]').forEach(r => r.addEventListener('change', (e) => {
+  PHANTOM_MODE = e.target.value; draw();
+}));
+const edgeSlider = document.getElementById('edge-slider');
+const edgeVal = document.getElementById('edge-val');
+edgeSlider.addEventListener('input', (e) => {
+  edgeThresh = +e.target.value; edgeVal.textContent = edgeThresh;
+  edges = rawEdges.filter(x => (x.weight ?? 1) >= edgeThresh);
+  edges.forEach(e => { e.source = typeof e.source === 'object' ? e.source.id : (e.sIdx ?? e.source);
+                       e.target = typeof e.target === 'object' ? e.target.id : (e.tIdx ?? e.target); });
+  simulation.force('coauth').links(edges);
+  simulation.alpha(0.3).restart();
+});
+
+// Search
+const searchInput = document.getElementById('search');
+const resultsDiv = document.getElementById('results');
+searchInput.addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { resultsDiv.innerHTML = ''; return; }
+  const matches = nodes.filter(n => n.label.toLowerCase().includes(q))
+    .sort((a, b) => b.papers - a.papers).slice(0, 25);
+  resultsDiv.innerHTML = matches.length
+    ? matches.map(n => `<div class="result-item" data-id="${n.id}"><span>${esc(n.label)}</span><span class="count">${n.papers}</span></div>`).join('')
+    : '<div style="color:#888;padding:4px 8px;font-size:12px;">No matches</div>';
+});
+resultsDiv.addEventListener('click', (e) => {
+  const it = e.target.closest('.result-item'); if (!it) return;
+  selected = nodeById.get(+it.dataset.id);
+  renderSelected();
+  if (selected) {
+    const k = 3;
+    const tx = width/2 - selected.x * k, ty = height/2 - selected.y * k;
+    d3.select(canvas).transition().duration(500)
+      .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+  }
+});
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+window.addEventListener('resize', () => {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+  simulation.force('center', d3.forceCenter(width / 2, height / 2).strength(0.04));
+  draw();
+});
+})();
+</script>
+</body>
+</html>

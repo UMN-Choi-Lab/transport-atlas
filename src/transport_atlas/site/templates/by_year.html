@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Papers by Year — Transport Atlas</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --accent:#1f6feb; --card:#fff; --border:#e4e4e7; }
+  * { box-sizing: border-box; }
+  body { font-family:-apple-system,"Segoe UI",sans-serif; margin:24px;
+         background:var(--bg); color:var(--fg); }
+  .brand { font-size:12px; letter-spacing:.5px; color:#888; margin-bottom:4px; }
+  .brand a { color:inherit; text-decoration:none; font-weight:600; }
+  .brand a:hover { color:var(--accent); }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:#666; font-size:13px; margin-bottom:20px; display:flex;
+         justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .sub a { color:var(--accent); text-decoration:none; font-size:11px; }
+
+  /* ——— Filter panel (same language as explorer.html) ——— */
+  .filters { background:var(--card); border:1px solid var(--border); border-radius:8px;
+             padding:14px 16px; margin-bottom:14px; }
+  .filters h2 { margin:0 0 10px; font-size:15px; font-weight:600; }
+  .filters .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  .filters .row.venue { gap:4px 10px; }
+  .filters label { font-size:12.5px; color:var(--muted); display:inline-flex;
+                   align-items:center; gap:6px; }
+  .filters .row.venue label { background:#f8fafc; border:1px solid var(--border);
+                              padding:3px 8px; border-radius:4px; font-size:12px; }
+  .filters .row.venue label input { margin:0; }
+  .filters .row.venue .yr { color:#94a3b8; font-size:10.5px; }
+  .filters .grouphdr { font-size:10.5px; color:#64748b; text-transform:uppercase;
+                       letter-spacing:.5px; font-weight:600; margin-right:6px; min-width:66px; }
+  .filters input[type=number], .filters input[type=text], .filters select {
+    padding:5px 8px; border:1px solid var(--border); border-radius:4px; font-size:13px;
+    background:var(--card); color:var(--fg);
+  }
+  .filters input[type=number] { width:80px; }
+  .filters input[type=text] { min-width:90px; width:110px; }
+  .filters .btn { padding:5px 14px; font-size:13px; border:1px solid var(--border);
+                  border-radius:4px; cursor:pointer; background:var(--accent); color:#fff;
+                  font-weight:500; }
+  .filters .btn:hover { background:#1a5ac9; }
+  .filters .btn.reset { background:var(--card); color:var(--muted); }
+  .filters .btn.reset:hover { background:#f1f5f9; color:var(--fg); }
+  .filters .btn.mini { padding:2px 8px; font-size:11px; background:var(--card);
+                       color:var(--muted); font-weight:400; }
+  .filters .btn.mini:hover { background:#f1f5f9; color:var(--fg); }
+  .filters .sep { width:1px; height:20px; background:var(--border); margin:0 4px; }
+  .result-info { color:var(--muted); font-size:13px; margin-left:auto; }
+  .result-info b { color:var(--fg); font-variant-numeric:tabular-nums; }
+  .live-toggle { font-size:11px; color:var(--muted); }
+
+  .controls { margin-bottom:12px; }
+  .controls button { border:1px solid #ccc; background:#fff; padding:6px 14px;
+                     margin-right:6px; border-radius:6px; cursor:pointer; font-size:13px; }
+  .controls button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .wrap { background:#fff; border:1px solid #e5e5e5; border-radius:8px; padding:16px;
+          height:70vh; min-height:520px; }
+  .wrap canvas { width:100% !important; height:100% !important; }
+  .venue-toggles { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center;
+                   margin-bottom:10px; background:#fff; border:1px solid #e5e5e5;
+                   border-radius:8px; padding:8px 12px; }
+  .venue-toggles label { display:inline-flex; align-items:center; gap:5px;
+                         font-size:12px; cursor:pointer; padding:2px 6px;
+                         border-radius:3px; user-select:none; }
+  .venue-toggles label:hover { background:#f4f4f4; }
+  .venue-toggles label.off { opacity:0.35; }
+  .venue-toggles label .sw { width:10px; height:10px; border-radius:2px;
+                             display:inline-block; border:1px solid rgba(0,0,0,.15); }
+  .venue-toggles input[type=checkbox] { margin:0; cursor:pointer; }
+  .venue-toggles .quick { background:#f4f4f4; border:1px solid #ccc;
+                          padding:3px 10px; border-radius:4px; cursor:pointer;
+                          font-size:11px; margin-right:8px; }
+  .venue-toggles .quick:hover { background:#e8e8e8; }
+  .summary { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+             gap:16px; margin-top:20px; }
+  .card { min-width:0; background:#fff; border:1px solid #e5e5e5; border-radius:8px;
+          padding:14px 18px; }
+  .card .num { font-size:24px; font-weight:600; }
+  .card .label { color:#666; font-size:12px; }
+  .card.v-total  { border-top:3px solid #444; }
+  table { width:100%; border-collapse:collapse; margin-top:24px; font-size:12px; }
+  th, td { border-bottom:1px solid #eee; padding:6px 10px; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  th { background:#f4f4f4; font-weight:600; position:sticky; top:0; }
+  td.c-total { font-weight:600; font-variant-numeric:tabular-nums; }
+  .table-wrap { max-height:60vh; overflow-y:auto; margin-top:24px;
+                border:1px solid #e5e5e5; border-radius:8px; background:#fff; }
+  #loading { color:#888; font-style:italic; padding:16px; }
+</style>
+</head>
+<body>
+
+<div class="brand" style="display:flex;gap:12px;">
+  <a href="https://choi-seongjin.github.io/" style="color:#888;">← Choi Lab</a>
+  <span style="color:#ddd;">·</span>
+  <a href="index.html">Transport Atlas</a>
+</div>
+<h1>Papers by Year</h1>
+<div class="sub">
+  <span id="sub-line">Loading…</span>
+  <span style="color:#888;text-align:right;line-height:1.4;">
+    Built {{ build_time }}
+  </span>
+</div>
+
+<!-- ——— Filter panel ——— -->
+<div class="filters">
+  <h2>Filters</h2>
+
+  <div class="row">
+    <label>Year
+      <input type="number" id="f-year-from" min="1950" max="2030" value="1950">
+      ~
+      <input type="number" id="f-year-to"   min="1950" max="2030" value="2030">
+    </label>
+
+    <span class="sep"></span>
+
+    <label>Min citations
+      <input type="number" id="f-mincite" min="0" value="0">
+    </label>
+
+    <span class="sep"></span>
+
+    <label>Title:
+      <input type="text" id="f-title-1" placeholder="word 1">
+      <input type="text" id="f-title-2" placeholder="word 2">
+      <input type="text" id="f-title-3" placeholder="word 3">
+      <select id="f-title-op">
+        <option value="AND">AND</option>
+        <option value="OR">OR</option>
+      </select>
+    </label>
+
+    <label>Author:
+      <input type="text" id="f-author" placeholder="author name" style="width:160px;">
+    </label>
+
+    <button class="btn" id="btn-apply">Apply</button>
+    <button class="btn reset" id="btn-reset">Reset</button>
+    <label class="live-toggle"><input type="checkbox" id="live-filter"> live</label>
+  </div>
+
+  <div id="venue-groups"></div>
+
+  <div class="row" style="margin-bottom:0;">
+    <div class="result-info" id="result-info">—</div>
+  </div>
+</div>
+
+<div class="summary" id="summary"></div>
+
+<div style="margin-top:24px;">
+  <div class="controls">
+    <button id="btn-stacked" class="active">Stacked</button>
+    <button id="btn-grouped">Grouped</button>
+    <button id="btn-line">Line</button>
+  </div>
+  <div class="venue-toggles" id="venue-toggles">
+    <button class="quick" id="btn-venue-all">All</button>
+    <button class="quick" id="btn-venue-none">None</button>
+  </div>
+  <div class="wrap"><canvas id="chart"></canvas></div>
+</div>
+
+<div id="loading">Loading papers.json …</div>
+<div class="table-wrap" style="display:none;"><table id="tbl"></table></div>
+
+<script>
+const cacheBust = "{{ cache_bust }}";
+const VENUE_COLOR = {
+  "TR-A":"#1f77b4","TR-B":"#ff7f0e","TR-C":"#2ca02c","TR-D":"#d62728",
+  "TR-E":"#9467bd","TR-F":"#8c564b","T-ITS":"#17becf","T-IV":"#e377c2",
+  "ITS Mag":"#bcbd22","TRR":"#7f7f7f",
+};
+function fallbackColor(idx) {
+  const hue = (idx * 137.508) % 360;
+  return `hsl(${hue.toFixed(1)}, 55%, 48%)`;
+}
+function colorFor(short, idx) { return VENUE_COLOR[short] || fallbackColor(idx); }
+function fmt(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+
+const venueGroupsDef = [
+  { name: 'Elsevier TR-family', venues: ['TR-A','TR-B','TR-C','TR-D','TR-E','TR-F'] },
+  { name: 'Elsevier (other)',   venues: ['AAP','JTG','TranspPol','TRIP','RTBM','TBS','JTTE','IJTST','JPT','AMAR','JUM','CommTR'] },
+  { name: 'IEEE',               venues: ['T-ITS','T-IV','ITS Mag','OJ-ITS'] },
+  { name: 'SAGE',               venues: ['TRR'] },
+  { name: 'Taylor & Francis',   venues: ['TranspRev','IJST'] },
+  { name: 'INFORMS',            venues: ['TransSci'] },
+  { name: 'Springer',           venues: ['ETRR','RailEng'] },
+  { name: 'Emerald',            venues: ['JICV'] },
+];
+
+fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rawPapers => {
+  document.getElementById('loading').remove();
+  document.querySelector('.table-wrap').style.display = 'block';
+
+  // ——— Precompute per-venue year ranges + global bounds ———
+  const venueYears = new Map();
+  const venueOrder = [];
+  let gYmin = Infinity, gYmax = -Infinity;
+  for (const p of rawPapers) {
+    const v = p.venue_short, y = p.year;
+    if (!venueYears.has(v)) { venueYears.set(v, { min: y, max: y, n: 0 }); venueOrder.push(v); }
+    const vy = venueYears.get(v);
+    if (y < vy.min) vy.min = y;
+    if (y > vy.max) vy.max = y;
+    vy.n++;
+    if (y < gYmin) gYmin = y;
+    if (y > gYmax) gYmax = y;
+  }
+  venueOrder.sort((a, b) => venueYears.get(b).n - venueYears.get(a).n);
+
+  const yf = document.getElementById('f-year-from');
+  const yt = document.getElementById('f-year-to');
+  yf.min = yt.min = gYmin; yf.max = yt.max = gYmax;
+  yf.value = gYmin; yt.value = gYmax;
+
+  document.getElementById('sub-line').textContent =
+    `${gYmin}~${gYmax} · ${fmt(rawPapers.length)} papers (DOI-deduped)`;
+
+  // ——— Venue checkbox groups ———
+  const groupsHost = document.getElementById('venue-groups');
+  groupsHost.innerHTML = venueGroupsDef.map(g => {
+    const chips = g.venues.filter(v => venueYears.has(v)).map(v => {
+      const vy = venueYears.get(v);
+      return `<label title="${v} · ${fmt(vy.n)} papers">`
+           + `<input type="checkbox" class="v-cb" value="${v}" checked>`
+           + ` ${v} <span class="yr">(${vy.min}~${vy.max})</span></label>`;
+    }).join('');
+    if (!chips) return '';
+    return `<div class="row venue">`
+         + `<span class="grouphdr">${g.name}</span>`
+         + chips
+         + ` <button class="btn mini" data-group="${g.name}" data-act="none">none</button>`
+         + ` <button class="btn mini" data-group="${g.name}" data-act="all">all</button>`
+         + `</div>`;
+  }).join('')
+    + `<div class="row venue" style="margin-top:2px;">`
+    + `<span class="grouphdr">All venues</span>`
+    + `<button class="btn mini" id="v-all">select all</button>`
+    + `<button class="btn mini" id="v-none">clear all</button>`
+    + `</div>`;
+
+  groupsHost.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'v-all' || b.id === 'v-none') {
+      const check = b.id === 'v-all';
+      document.querySelectorAll('.v-cb').forEach(cb => cb.checked = check);
+    } else if (b.dataset.group) {
+      const g = venueGroupsDef.find(x => x.name === b.dataset.group);
+      if (!g) return;
+      const check = b.dataset.act === 'all';
+      document.querySelectorAll('.v-cb').forEach(cb => {
+        if (g.venues.includes(cb.value)) cb.checked = check;
+      });
+    }
+    triggerIfLive();
+  });
+
+  // ——— Client-side aggregation ———
+  function aggregate(papers, ymin, ymax, selectedVenues) {
+    const years = [];
+    for (let y = ymin; y <= ymax; y++) years.push(y);
+    const yIdx = new Map(years.map((y, i) => [y, i]));
+    const venueNames = venueOrder.filter(v => selectedVenues.has(v));
+    const vIdx = new Map(venueNames.map((v, i) => [v, i]));
+    const counts = venueNames.map(() => new Array(years.length).fill(0));
+    for (const p of papers) {
+      const yi = yIdx.get(p.year);
+      const vi = vIdx.get(p.venue_short);
+      if (yi != null && vi != null) counts[vi][yi]++;
+    }
+    return { years, venues: venueNames.map((v, i) => ({ short: v, counts: counts[i] })) };
+  }
+
+  // ——— UI element refs ———
+  const sumEl = document.getElementById('summary');
+  const togglesEl = document.getElementById('venue-toggles');
+  const tbl = document.getElementById('tbl');
+  const elInfo = document.getElementById('result-info');
+  const ctx = document.getElementById('chart').getContext('2d');
+  let chart, currentMode = 'stacked';
+  let venueHidden = [];
+  let labelEls = [];
+  let lastAgg = null;
+
+  function renderSummary(agg, filteredTotal) {
+    let totalAll = 0, peakYear = agg.years[0], peakTot = 0;
+    agg.years.forEach((y, i) => {
+      const t = agg.venues.reduce((acc, v) => acc + v.counts[i], 0);
+      totalAll += t;
+      if (t > peakTot) { peakTot = t; peakYear = y; }
+    });
+    const cards = agg.venues.map((v, idx) => {
+      const tot = v.counts.reduce((a, b) => a + b, 0);
+      const firstIdx = v.counts.findIndex(c => c > 0);
+      const firstY = firstIdx >= 0 ? agg.years[firstIdx] : '—';
+      const color = colorFor(v.short, idx);
+      return `<div class="card" style="border-top:3px solid ${color};">`
+           + `<div class="num">${fmt(tot)}</div>`
+           + `<div class="label">${v.short} (${firstY}~)</div></div>`;
+    }).join('');
+    sumEl.innerHTML = cards
+      + `<div class="card v-total"><div class="num">${fmt(totalAll)}</div>
+         <div class="label">Filtered total</div></div>`
+      + `<div class="card v-total"><div class="num">${peakYear} (${fmt(peakTot)})</div>
+         <div class="label">Peak year</div></div>`;
+  }
+
+  function renderTable(agg) {
+    const headRow = `<thead><tr><th>Year</th>${agg.venues.map(v => `<th>${v.short}</th>`).join('')}<th>Total</th></tr></thead>`;
+    const bodyRows = agg.years.map((y, i) => {
+      const cells = agg.venues.map((v, idx) => {
+        const c = v.counts[i] || 0;
+        const style = c ? `color:${colorFor(v.short, idx)};font-variant-numeric:tabular-nums;` : 'color:#bbb;';
+        return `<td style="${style}">${fmt(c)}</td>`;
+      }).join('');
+      const tot = agg.venues.reduce((acc, v) => acc + v.counts[i], 0);
+      return `<tr><td>${y}</td>${cells}<td class="c-total">${fmt(tot)}</td></tr>`;
+    }).reverse().join('');
+    tbl.innerHTML = headRow + '<tbody>' + bodyRows + '</tbody>';
+  }
+
+  function renderToggles(agg) {
+    // Preserve prior hidden state when venue set changes
+    const oldHidden = new Map();
+    labelEls.forEach((el, i) => oldHidden.set(agg.venues[i]?.short, venueHidden[i]));
+    labelEls = [];
+    venueHidden = new Array(agg.venues.length).fill(false).map((_, i) =>
+      oldHidden.get(agg.venues[i].short) || false);
+    // Strip previous labels (keep All/None quick buttons)
+    togglesEl.querySelectorAll('label').forEach(el => el.remove());
+    agg.venues.forEach((v, idx) => {
+      const color = colorFor(v.short, idx);
+      const wrap = document.createElement('label');
+      wrap.className = venueHidden[idx] ? 'off' : '';
+      wrap.innerHTML = `<span class="sw" style="background:${color};"></span>`
+        + `<input type="checkbox" ${venueHidden[idx] ? '' : 'checked'} data-idx="${idx}">`
+        + `<span>${v.short}</span>`;
+      togglesEl.appendChild(wrap);
+      labelEls.push(wrap);
+    });
+  }
+
+  function makeDatasets(agg, mode) {
+    return agg.venues.map((v, idx) => ({
+      label: v.short, data: v.counts,
+      backgroundColor: colorFor(v.short, idx),
+      borderColor: colorFor(v.short, idx),
+      tension: mode === 'line' ? 0.25 : 0, fill: false,
+      hidden: venueHidden[idx],
+    }));
+  }
+
+  function renderChart(agg, mode) {
+    currentMode = mode;
+    if (chart) chart.destroy();
+    const stacked = mode === 'stacked';
+    chart = new Chart(ctx, {
+      type: mode === 'line' ? 'line' : 'bar',
+      data: { labels: agg.years, datasets: makeDatasets(agg, mode) },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } },
+        scales: {
+          x: { stacked, title: { display: true, text: 'Year' } },
+          y: { stacked, beginAtZero: true, title: { display: true, text: 'Papers' } },
+        },
+      },
+    });
+  }
+
+  function renderAll(filteredPapers) {
+    const ymin = parseInt(yf.value) || gYmin;
+    const ymax = parseInt(yt.value) || gYmax;
+    const selectedVenues = new Set(
+      Array.from(document.querySelectorAll('.v-cb:checked')).map(cb => cb.value)
+    );
+    const agg = aggregate(filteredPapers, ymin, ymax, selectedVenues);
+    lastAgg = agg;
+    renderSummary(agg, filteredPapers.length);
+    renderTable(agg);
+    renderToggles(agg);
+    renderChart(agg, currentMode);
+    elInfo.innerHTML = `Showing <b>${fmt(filteredPapers.length)}</b> / ${fmt(rawPapers.length)} papers`;
+  }
+
+  // ——— Filter logic ———
+  function applyFilters() {
+    const ymin = parseInt(yf.value) || gYmin;
+    const ymax = parseInt(yt.value) || gYmax;
+    const cmin = parseInt(document.getElementById('f-mincite').value) || 0;
+    const t1 = document.getElementById('f-title-1').value.trim().toLowerCase();
+    const t2 = document.getElementById('f-title-2').value.trim().toLowerCase();
+    const t3 = document.getElementById('f-title-3').value.trim().toLowerCase();
+    const titleWords = [t1, t2, t3].filter(Boolean);
+    const titleOp = document.getElementById('f-title-op').value;
+    const author = document.getElementById('f-author').value.trim().toLowerCase();
+    const selectedVenues = new Set(
+      Array.from(document.querySelectorAll('.v-cb:checked')).map(cb => cb.value)
+    );
+
+    const kept = [];
+    for (const r of rawPapers) {
+      if (r.year < ymin || r.year > ymax) continue;
+      if ((r.cited_by_count || 0) < cmin) continue;
+      if (!selectedVenues.has(r.venue_short)) continue;
+      if (titleWords.length) {
+        const t = (r.title || '').toLowerCase();
+        const hits = titleWords.map(w => t.includes(w));
+        if (titleOp === 'AND' && !hits.every(Boolean)) continue;
+        if (titleOp === 'OR'  && !hits.some(Boolean))  continue;
+      }
+      if (author && !(r.authors_short || '').toLowerCase().includes(author)) continue;
+      kept.push(r);
+    }
+    renderAll(kept);
+    syncUrlHash();
+  }
+
+  function resetFilters() {
+    yf.value = gYmin; yt.value = gYmax;
+    document.getElementById('f-mincite').value = 0;
+    document.getElementById('f-title-1').value = '';
+    document.getElementById('f-title-2').value = '';
+    document.getElementById('f-title-3').value = '';
+    document.getElementById('f-title-op').value = 'AND';
+    document.getElementById('f-author').value = '';
+    document.querySelectorAll('.v-cb').forEach(cb => cb.checked = true);
+    renderAll(rawPapers);
+    syncUrlHash();
+  }
+
+  document.getElementById('btn-apply').addEventListener('click', applyFilters);
+  document.getElementById('btn-reset').addEventListener('click', resetFilters);
+
+  let liveTimer = null;
+  function triggerIfLive() {
+    if (!document.getElementById('live-filter').checked) return;
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(applyFilters, 220);
+  }
+  ['f-year-from','f-year-to','f-mincite','f-title-1','f-title-2','f-title-3','f-title-op','f-author']
+    .forEach(id => document.getElementById(id).addEventListener('input', triggerIfLive));
+  document.querySelector('.filters').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); applyFilters(); }
+  });
+
+  // ——— URL hash state ———
+  function syncUrlHash() {
+    const mask = Array.from(document.querySelectorAll('.v-cb')).map(cb => cb.checked ? '1' : '0').join('');
+    const s = new URLSearchParams();
+    s.set('y', `${yf.value}-${yt.value}`);
+    const c = document.getElementById('f-mincite').value;
+    if (+c > 0) s.set('c', c);
+    const tws = [document.getElementById('f-title-1').value,
+                 document.getElementById('f-title-2').value,
+                 document.getElementById('f-title-3').value];
+    if (tws.some(w => w.trim())) {
+      s.set('t', tws.join('|'));
+      s.set('op', document.getElementById('f-title-op').value);
+    }
+    const au = document.getElementById('f-author').value;
+    if (au) s.set('a', au);
+    if (mask.includes('0')) s.set('v', mask);
+    history.replaceState(null, '', '#' + s.toString());
+  }
+  function restoreFromHash() {
+    if (!location.hash) return;
+    const s = new URLSearchParams(location.hash.slice(1));
+    const y = s.get('y');
+    if (y && y.includes('-')) { const [a,b] = y.split('-'); yf.value = a; yt.value = b; }
+    if (s.has('c')) document.getElementById('f-mincite').value = s.get('c');
+    if (s.has('t')) {
+      const [a,b,c] = s.get('t').split('|');
+      document.getElementById('f-title-1').value = a || '';
+      document.getElementById('f-title-2').value = b || '';
+      document.getElementById('f-title-3').value = c || '';
+    }
+    if (s.has('op')) document.getElementById('f-title-op').value = s.get('op');
+    if (s.has('a'))  document.getElementById('f-author').value    = s.get('a');
+    if (s.has('v')) {
+      const mask = s.get('v');
+      document.querySelectorAll('.v-cb').forEach((cb, i) => {
+        if (i < mask.length) cb.checked = mask[i] === '1';
+      });
+    }
+  }
+
+  // ——— Chart mode + per-venue visibility ———
+  togglesEl.addEventListener('change', (e) => {
+    const cb = e.target.closest('input[type=checkbox]');
+    if (!cb) return;
+    const idx = parseInt(cb.dataset.idx);
+    venueHidden[idx] = !cb.checked;
+    if (chart) {
+      chart.data.datasets[idx].hidden = venueHidden[idx];
+      chart.update();
+      labelEls[idx].classList.toggle('off', venueHidden[idx]);
+    }
+  });
+  document.getElementById('btn-venue-all').addEventListener('click', () => {
+    venueHidden.fill(false);
+    togglesEl.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+    labelEls.forEach(el => el.classList.remove('off'));
+    if (chart) { chart.data.datasets.forEach(ds => ds.hidden = false); chart.update(); }
+  });
+  document.getElementById('btn-venue-none').addEventListener('click', () => {
+    venueHidden.fill(true);
+    togglesEl.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    labelEls.forEach(el => el.classList.add('off'));
+    if (chart) { chart.data.datasets.forEach(ds => ds.hidden = true); chart.update(); }
+  });
+
+  const btns = { stacked: 'btn-stacked', grouped: 'btn-grouped', line: 'btn-line' };
+  Object.entries(btns).forEach(([mode, id]) => {
+    document.getElementById(id).addEventListener('click', () => {
+      Object.values(btns).forEach(x => document.getElementById(x).classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      if (lastAgg) renderChart(lastAgg, mode);
+    });
+  });
+
+  // ——— Initial render ———
+  restoreFromHash();
+  applyFilters();  // also populates chart/table/summary
+});
+</script>
+</body>
+</html>

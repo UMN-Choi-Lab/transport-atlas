@@ -1,0 +1,429 @@
+# Transportation Science & Technology journals tracked by the atlas.
+# Source of JIF/quartile: JCR 2024 (Clarivate) — "TRANSPORTATION SCIENCE & TECHNOLOGY" category.
+# Toggle a venue on/off with `enabled: true|false`.
+#
+# After editing, run:
+#   python scripts/01_ingest.py --source openalex
+#   python scripts/02_dedupe.py && python scripts/03_graph.py && python scripts/04_render.py
+venues:
+  # ==== Elsevier Transportation Research Part A-F ====
+  - slug: tr-a
+    enabled: true
+    name: "Transportation Research Part A: Policy and Practice"
+    short: "TR-A"
+    issns: ["0965-8564", "1879-2375"]
+    publisher: elsevier
+    jif_2024: 6.8
+    quartile: Q1
+
+  - slug: tr-b
+    enabled: true
+    name: "Transportation Research Part B: Methodological"
+    short: "TR-B"
+    issns: ["0191-2615", "1879-2367"]
+    publisher: elsevier
+    jif_2024: 6.3
+    quartile: Q1
+
+  - slug: tr-c
+    enabled: true
+    name: "Transportation Research Part C: Emerging Technologies"
+    short: "TR-C"
+    issns: ["0968-090X", "1879-2359"]
+    publisher: elsevier
+    jif_2024: 7.9
+    quartile: Q1
+
+  - slug: tr-d
+    enabled: true
+    name: "Transportation Research Part D: Transport and Environment"
+    short: "TR-D"
+    issns: ["1361-9209", "1879-2340"]
+    publisher: elsevier
+    jif_2024: 7.7
+    quartile: Q1
+
+  - slug: tr-e
+    enabled: true
+    name: "Transportation Research Part E: Logistics and Transportation Review"
+    short: "TR-E"
+    issns: ["1366-5545", "1878-5794"]
+    publisher: elsevier
+    jif_2024: 8.8
+    quartile: Q1
+
+  - slug: tr-f
+    enabled: true
+    name: "Transportation Research Part F: Traffic Psychology and Behaviour"
+    short: "TR-F"
+    issns: ["1369-8478", "1873-5517"]
+    publisher: elsevier
+    jif_2024: null
+    quartile: null
+
+  # ==== IEEE flagship ITS / IV journals (core) ====
+  - slug: t-its
+    enabled: true
+    name: "IEEE Transactions on Intelligent Transportation Systems"
+    short: "T-ITS"
+    issns: ["1524-9050", "1558-0016"]
+    publisher: ieee
+    jif_2024: 8.4
+    quartile: Q1
+
+  - slug: t-iv
+    enabled: true
+    name: "IEEE Transactions on Intelligent Vehicles"
+    short: "T-IV"
+    issns: ["2379-8858", "2379-8904"]
+    publisher: ieee
+    jif_2024: 14.3
+    quartile: Q1
+
+  - slug: its-mag
+    enabled: true
+    name: "IEEE Intelligent Transportation Systems Magazine"
+    short: "ITS Mag"
+    issns: ["1939-1390", "1941-1197"]
+    publisher: ieee
+    jif_2024: 5.1
+    quartile: Q2
+
+  # ==== Core transportation-research additions (enabled) ====
+  - slug: comm-tr-res
+    enabled: true
+    name: "Communications in Transportation Research"
+    short: "CommTR"
+    issns: ["2772-4247"]
+    publisher: elsevier
+    jif_2024: 14.5
+    quartile: Q1
+
+  - slug: transci
+    enabled: true
+    name: "Transportation Science"
+    short: "TransSci"
+    issns: ["0041-1655"]
+    publisher: informs
+    jif_2024: 4.8
+    quartile: Q2
+    # INFORMS flagship for OR / methodological transportation. Q2 but must-include.
+
+  - slug: trr
+    enabled: true
+    name: "Transportation Research Record: Journal of the Transportation Research Board"
+    short: "TRR"
+    issns: ["0361-1981", "2169-4052"]
+    publisher: sage
+    jif_2024: 2.0
+    quartile: Q3
+    # TRB's journal, published by SAGE. Cornerstone applied/empirical venue:
+    # low JIF but huge volume and the de-facto outlet for US DOT-funded and
+    # TRB Annual Meeting work. OpenAlex only (no SAGE full-text key).
+
+  # ==== From JCR "TRANSPORTATION" category (core transportation research) ====
+  - slug: amar
+    enabled: true
+    name: "Analytic Methods in Accident Research"
+    short: "AMAR"
+    issns: ["2213-6657", "2213-6665"]
+    publisher: elsevier
+    jif_2024: 12.6
+    quartile: Q1
+
+  - slug: transp-rev
+    enabled: true
+    name: "Transport Reviews"
+    short: "TranspRev"
+    issns: ["0144-1647", "1464-5327"]
+    publisher: taylor-francis
+    jif_2024: 9.9
+    quartile: Q1
+
+  - slug: jtg
+    enabled: true
+    name: "Journal of Transport Geography"
+    short: "JTG"
+    issns: ["0966-6923", "1873-1236"]
+    publisher: elsevier
+    jif_2024: 6.3
+    quartile: Q1
+
+  - slug: aap
+    enabled: true
+    name: "Accident Analysis and Prevention"
+    short: "AAP"
+    issns: ["0001-4575", "1879-2057"]
+    publisher: elsevier
+    jif_2024: 6.2
+    quartile: Q1
+
+  - slug: jum
+    enabled: true
+    name: "Journal of Urban Mobility"
+    short: "JUM"
+    issns: ["2667-0917"]
+    publisher: elsevier
+    jif_2024: 6.1
+    quartile: Q1
+
+  - slug: tbs
+    enabled: true
+    name: "Travel Behaviour and Society"
+    short: "TBS"
+    issns: ["2214-367X", "2214-3688"]
+    publisher: elsevier
+    jif_2024: 5.7
+    quartile: Q1
+
+  - slug: tpol
+    enabled: true
+    name: "Transport Policy"
+    short: "TranspPol"
+    issns: ["0967-070X", "1879-310X"]
+    publisher: elsevier
+    jif_2024: 5.3
+    quartile: Q1
+
+  - slug: rtbm
+    enabled: true
+    name: "Research in Transportation Business and Management"
+    short: "RTBM"
+    issns: ["2210-5395", "2210-5409"]
+    publisher: elsevier
+    jif_2024: 4.4
+    quartile: Q2
+
+  - slug: etrr
+    enabled: true
+    name: "European Transport Research Review"
+    short: "ETRR"
+    issns: ["1867-0717", "1866-8887"]
+    publisher: springer
+    jif_2024: 4.2
+    quartile: Q2
+
+  - slug: ijst
+    enabled: true
+    name: "International Journal of Sustainable Transportation"
+    short: "IJST"
+    issns: ["1556-8318", "1556-8334"]
+    publisher: taylor-francis
+    jif_2024: 3.9
+    quartile: Q2
+
+  - slug: trip
+    enabled: true
+    name: "Transportation Research Interdisciplinary Perspectives"
+    short: "TRIP"
+    issns: ["2590-1982"]
+    publisher: elsevier
+    jif_2024: 3.8
+    quartile: Q2
+    # Part of the TR family — interdisciplinary scope, natural fit with TR A-F.
+
+  - slug: jpt
+    enabled: true
+    name: "Journal of Public Transportation"
+    short: "JPT"
+    issns: ["1077-291X", "2375-0901"]
+    publisher: elsevier
+    jif_2024: 3.7
+    quartile: Q2
+
+  # ==== JCR Transportation — niche, disabled by default ====
+  - slug: mel
+    enabled: false
+    name: "Maritime Economics & Logistics"
+    short: "MEL"
+    issns: ["1479-2931", "1479-294X"]
+    publisher: palgrave
+    jif_2024: 4.8
+    quartile: Q1
+    # OFF: maritime / shipping niche.
+
+  - slug: jsr
+    enabled: false
+    name: "Journal of Safety Research"
+    short: "JSR"
+    issns: ["0022-4375", "1879-1247"]
+    publisher: elsevier
+    jif_2024: 4.4
+    quartile: Q2
+    # OFF: broader safety research (not only transportation); overlaps with AAP.
+
+  - slug: ajsl
+    enabled: false
+    name: "Asian Journal of Shipping and Logistics"
+    short: "AJSL"
+    issns: ["2092-5212", "2352-4871"]
+    publisher: elsevier
+    jif_2024: 3.7
+    quartile: Q2
+    # OFF: regional shipping / logistics niche.
+
+  - slug: jatm
+    enabled: false
+    name: "Journal of Air Transport Management"
+    short: "JATM"
+    issns: ["0969-6997", "1873-2089"]
+    publisher: elsevier
+    jif_2024: 3.6
+    quartile: Q2
+    # OFF: aviation-specific.
+
+  - slug: cacie
+    enabled: false
+    name: "Computer-Aided Civil and Infrastructure Engineering"
+    short: "CACIE"
+    issns: ["1093-9687", "1467-8667"]
+    publisher: wiley
+    jif_2024: 9.1
+    quartile: Q1
+    # OFF: Wiley records arrive with unreliable OpenAlex author IDs (audit showed
+    # CACIE was the source of most false-merge name-only keys — "wang, dawei" at
+    # 24 papers, "loucks, d" at 23, "beck, j" at 23, etc.). Civil-engineering
+    # overlap is also weaker fit than the rest of the atlas. Flip back on only
+    # after upstream OpenAlex disambiguation improves or we add a SAGE/Wiley
+    # author-ID cleanup step.
+
+  - slug: jicv
+    enabled: true
+    name: "Journal of Intelligent and Connected Vehicles"
+    short: "JICV"
+    issns: ["2399-9802"]
+    publisher: emerald
+    jif_2024: 7.8
+    quartile: Q1
+
+  - slug: jtte
+    enabled: true
+    name: "Journal of Traffic and Transportation Engineering (English Edition)"
+    short: "JTTE"
+    issns: ["2095-7564"]
+    publisher: elsevier
+    jif_2024: 6.8
+    quartile: Q1
+
+  - slug: rail-eng-sci
+    enabled: true
+    name: "Railway Engineering Science"
+    short: "RailEng"
+    issns: ["2662-4745", "2662-4753"]
+    publisher: springer
+    jif_2024: 5.4
+    quartile: Q1
+
+  - slug: oj-its
+    enabled: true
+    name: "IEEE Open Journal of Intelligent Transportation Systems"
+    short: "OJ-ITS"
+    issns: ["2687-7813"]
+    publisher: ieee
+    jif_2024: 5.3
+    quartile: Q1
+
+  - slug: ijtst
+    enabled: true
+    name: "International Journal of Transportation Science and Technology"
+    short: "IJTST"
+    issns: ["2046-0430", "2046-0449"]
+    publisher: elsevier
+    jif_2024: 4.8
+    quartile: Q2
+
+  # ==== Adjacent venues — disabled by default ====
+  # These appear in JCR's "Transportation Science & Technology" category but sit at
+  # the edges: EV/battery engineering, power electronics, vehicular communications,
+  # mechatronics. Enable individually if you want that slice in the atlas.
+
+  - slug: etrans
+    enabled: false
+    name: "eTransportation"
+    short: "eTransp"
+    issns: ["2590-1168"]
+    publisher: elsevier
+    jif_2024: 17.0
+    quartile: Q1
+    # OFF by default: dominated by battery / EV-powertrain engineering, not
+    # transportation research in the conventional sense.
+
+  - slug: geit
+    enabled: false
+    name: "Green Energy and Intelligent Transportation"
+    short: "GEIT"
+    issns: ["2097-2512", "2773-1537"]
+    publisher: elsevier
+    jif_2024: 16.4
+    quartile: Q1
+    # OFF by default: heavy on energy-systems / EV charging side.
+
+  - slug: t-te
+    enabled: false
+    name: "IEEE Transactions on Transportation Electrification"
+    short: "T-TE"
+    issns: ["2332-7782"]
+    publisher: ieee
+    jif_2024: 8.3
+    quartile: Q1
+    # OFF by default: power electronics for EV charging / traction drives.
+
+  - slug: vtm
+    enabled: false
+    name: "IEEE Vehicular Technology Magazine"
+    short: "VT Mag"
+    issns: ["1556-6072", "1556-6080"]
+    publisher: ieee
+    jif_2024: 7.6
+    quartile: Q1
+    # OFF by default: broad vehicular tech (comms + hardware).
+
+  - slug: t-vt
+    enabled: false
+    name: "IEEE Transactions on Vehicular Technology"
+    short: "T-VT"
+    issns: ["0018-9545", "1939-9359"]
+    publisher: ieee
+    jif_2024: 7.1
+    quartile: Q1
+    # OFF by default: comms-heavy, ~30k+ papers would swamp the corpus.
+
+  - slug: vehcomm
+    enabled: false
+    name: "Vehicular Communications"
+    short: "VehComm"
+    issns: ["2214-2096"]
+    publisher: elsevier
+    jif_2024: 6.5
+    quartile: Q1
+    # OFF by default: V2X / 5G comms focus, not transportation research.
+
+  - slug: auto-innov
+    enabled: false
+    name: "Automotive Innovation"
+    short: "AutoInnov"
+    issns: ["2096-4250", "2522-8765"]
+    publisher: springer
+    jif_2024: 5.0
+    quartile: Q2
+    # OFF by default: mechanical / mechatronic vehicle engineering.
+
+  - slug: oj-vt
+    enabled: false
+    name: "IEEE Open Journal of Vehicular Technology"
+    short: "OJ-VT"
+    issns: ["2644-1330"]
+    publisher: ieee
+    jif_2024: 4.8
+    quartile: Q2
+    # OFF by default: overlaps with T-VT/T-TE content.
+
+  - slug: maritime
+    enabled: false
+    name: "Maritime Transport Research"
+    short: "Maritime"
+    issns: ["2666-822X"]
+    publisher: elsevier
+    jif_2024: 4.8
+    quartile: Q2
+    # OFF by default: maritime/shipping niche. Flip on for port/shipping research.
