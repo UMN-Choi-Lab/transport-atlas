@@ -50,6 +50,10 @@ case "$CMD" in
     exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python scripts/05_embed_papers.py "$@"
     ;;
+  finetune)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/08_finetune_specter2.py "$@"
+    ;;
   similarity|sim)
     exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python scripts/06_author_similarity.py "$@"
@@ -96,7 +100,7 @@ case "$CMD" in
     exec docker run -it "${COMMON_ARGS[@]}" "$IMAGE" bash
     ;;
   *)
-    echo "usage: $0 {embed|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|analysis|shell}" >&2
+    echo "usage: $0 {embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|analysis|shell}" >&2
     exit 2
     ;;
 esac

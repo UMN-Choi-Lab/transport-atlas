@@ -349,9 +349,16 @@ def fig_papers_by_year_stacked(papers: pd.DataFrame,
     data.append(other.reindex(years, fill_value=0).values)
     labels.append(f"Other ({len(venue_totals) - top_n} venues)")
 
+    # Extended 9-color CB-safe palette (Okabe-Ito w/o black + Tol indigo)
+    # so all top venues + "Other" (grey) are visually distinct in the stack.
+    stack_palette = [
+        "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
+        "#D55E00", "#CC79A7", "#332288", "#117733",
+    ][:len(top_venues)] + ["#999999"]
+
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.stackplot(years, np.vstack(data), labels=labels, linewidth=0,
-                 colors=OKABE_ITO[:len(data)] + ["#999999"])
+                 colors=stack_palette)
     ax.set_xlabel("Year")
     ax.set_ylabel("Papers (per year)")
     ax.set_title("Papers per year, stacked by venue — 1967–2025")
