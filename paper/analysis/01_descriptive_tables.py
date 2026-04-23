@@ -94,8 +94,12 @@ def _tex_escape(s: str) -> str:
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+YEAR_MAX = 2025  # exclude partial 2026 snapshot from all analyses
+
+
 def load_all():
     papers = pd.read_parquet(INTERIM / "papers.parquet")
+    papers = papers[papers["year"] <= YEAR_MAX].copy()
     authors = pd.read_parquet(INTERIM / "authors.parquet")
     with open(PROCESSED / "venue_stats.json") as f:
         venue_stats = json.load(f)
@@ -332,7 +336,7 @@ def fig_papers_by_year_stacked(papers: pd.DataFrame,
 
     slug_to_short = {v["slug"]: v.get("short", v["slug"]) for v in venues_cfg}
 
-    years = np.arange(1967, 2027)
+    years = np.arange(1967, 2026)
     # Build a matrix: rows = venue groups, cols = years
     data = []
     labels = []
@@ -350,8 +354,8 @@ def fig_papers_by_year_stacked(papers: pd.DataFrame,
                  colors=OKABE_ITO[:len(data)] + ["#999999"])
     ax.set_xlabel("Year")
     ax.set_ylabel("Papers (per year)")
-    ax.set_title("Papers per year, stacked by venue — 1967–2026")
-    ax.set_xlim(1967, 2026)
+    ax.set_title("Papers per year, stacked by venue — 1967–2025")
+    ax.set_xlim(1967, 2025)
     ax.legend(loc="upper left", ncols=2, fontsize=7, frameon=False)
     ax.grid(alpha=0.2, axis="y")
     _save(fig, "04_papers_by_year_stacked")
@@ -397,8 +401,8 @@ def fig_team_size_over_time(papers: pd.DataFrame,
 
     ax.set_xlabel("Year")
     ax.set_ylabel("Average authors per paper (3-yr rolling mean)")
-    ax.set_title("Team size growth, 1967–2026")
-    ax.set_xlim(1967, 2026)
+    ax.set_title("Team size growth, 1967–2025")
+    ax.set_xlim(1967, 2025)
     ax.legend(loc="upper left", fontsize=8, frameon=False)
     ax.grid(alpha=0.2)
     # Sun & Rahwan window annotation

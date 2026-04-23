@@ -194,7 +194,9 @@ async def _run_async(
     buffer: list[dict] = []
     start = time.monotonic()
     completed = 0
-    async with httpx.AsyncClient(limits=limits, headers=headers, http2=False) as client:
+    async with httpx.AsyncClient(
+        limits=limits, headers=headers, http2=False, follow_redirects=True,
+    ) as client:
         tasks = [asyncio.create_task(_fetch_one(client, sem, limiter, d, email)) for d in todo]
         for coro in asyncio.as_completed(tasks):
             doi, cites, fetched_at = await coro

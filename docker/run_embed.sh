@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-# Run the embed pipeline in the GPU-enabled Docker image.
+# Run the embed + paper-analysis pipeline in the GPU-enabled Docker image.
 #
-#   GPU=1 ./docker/run_embed.sh embed          # run scripts/05_embed_papers.py
-#   GPU=1 ./docker/run_embed.sh similarity     # run scripts/06_author_similarity.py
-#   GPU=1 ./docker/run_embed.sh shell          # drop into bash inside the container
+# Pipeline stages:
+#   GPU=1 ./docker/run_embed.sh embed          # scripts/05_embed_papers.py
+#   GPU=1 ./docker/run_embed.sh similarity     # scripts/06_author_similarity.py
+#   GPU=1 ./docker/run_embed.sh phantom        # scripts/07_phantom_eval.py (§8)
+#
+# Paper analyses (outputs → paper/manuscript/{tables,figures}):
+#   ./docker/run_embed.sh descriptive          # paper/analysis/01_descriptive_tables.py
+#   ./docker/run_embed.sh coauthor             # paper/analysis/02_coauthor_structure.py
+#   ./docker/run_embed.sh partition            # paper/analysis/03_partition_alignment.py
+#   ./docker/run_embed.sh phantom-fig          # paper/analysis/04_phantom_eval.py
+#   ./docker/run_embed.sh trajectories         # paper/analysis/05_trajectory_taxonomy.py
+#   ./docker/run_embed.sh analysis <path> …    # arbitrary paper/analysis/*.py
+#
+# Misc:
+#   ./docker/run_embed.sh shell                # interactive bash in the container
 set -euo pipefail
 
 IMAGE="${IMAGE:-transport-atlas-embed:v1}"
@@ -48,11 +60,43 @@ case "$CMD" in
     docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python scripts/06_author_similarity.py
     ;;
+  phantom)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/07_phantom_eval.py "$@"
+    ;;
+  descriptive)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python paper/analysis/01_descriptive_tables.py "$@"
+    ;;
+  coauthor)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python paper/analysis/02_coauthor_structure.py "$@"
+    ;;
+  partition)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python paper/analysis/03_partition_alignment.py "$@"
+    ;;
+  phantom-fig)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python paper/analysis/04_phantom_eval.py "$@"
+    ;;
+  trajectories|traj)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python paper/analysis/05_trajectory_taxonomy.py "$@"
+    ;;
+  analysis)
+    # Pass-through for any other paper/analysis script: first arg is the path.
+    if [ $# -lt 1 ]; then
+      echo "usage: $0 analysis <script.py> [args …]" >&2
+      exit 2
+    fi
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" python "$@"
+    ;;
   shell)
     exec docker run -it "${COMMON_ARGS[@]}" "$IMAGE" bash
     ;;
   *)
-    echo "usage: $0 {embed|similarity|both|shell}" >&2
+    echo "usage: $0 {embed|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|analysis|shell}" >&2
     exit 2
     ;;
 esac

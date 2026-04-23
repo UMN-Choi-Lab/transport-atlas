@@ -24,6 +24,8 @@ RUN pip install --no-cache-dir \
     'leidenalg>=0.10' \
     'pyyaml>=6' \
     'unidecode>=1.3' \
-    'rapidfuzz>=3.6'
+    'rapidfuzz>=3.6' \
+    'matplotlib>=3.7' \
+    'python-dotenv>=1.0'
 
 WORKDIR /work
