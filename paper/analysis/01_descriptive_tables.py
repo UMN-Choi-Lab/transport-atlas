@@ -149,7 +149,7 @@ def table_venue_stats(venue_stats: list[dict]) -> None:
     # Sort by papers descending (matches our venues.html default)
     vs = sorted(venue_stats, key=lambda v: -v["papers"])
     lines = [
-        r"\begin{tabular}{lrrrrrrrr}",
+        r"\begin{tabular}{p{5.2cm}rrrrrrrr}",
         r"\toprule",
         (r"\textbf{Venue} & \textbf{Papers} & \textbf{Authors} & "
          r"\textbf{Single} & \textbf{Avg} & \textbf{Max} & "
@@ -161,7 +161,7 @@ def table_venue_stats(venue_stats: list[dict]) -> None:
     ]
     for v in vs:
         lines.append(
-            f"{_tex_escape(v['short'])} & "
+            f"{_tex_escape(v['name'])} & "
             f"{v['papers']:,} & {v['authors']:,} & "
             f"{v['single_pct']:.1f} & {v['avg_authors']:.2f} & "
             f"{v['max_authors']} & {v['collaborations']:,} & "
@@ -250,9 +250,9 @@ def table_venues_isbn(papers: pd.DataFrame, venues_cfg: list[dict]) -> None:
         n_papers[slug] = len(grp)
 
     lines = [
-        r"\begin{tabular}{llrl}",
+        r"\begin{tabular}{p{5.2cm}llrl}",
         r"\toprule",
-        (r"\textbf{Venue} & \textbf{ISSN (print / online)} & "
+        (r"\textbf{Venue} & \textbf{Abbr.} & \textbf{ISSN (print / online)} & "
          r"\textbf{Papers} & \textbf{Coverage} \\"),
         r"\midrule",
     ]
@@ -261,10 +261,12 @@ def table_venues_isbn(papers: pd.DataFrame, venues_cfg: list[dict]) -> None:
         if slug not in n_papers:
             continue
         short = v.get("short", slug.upper())
+        name = v.get("name", slug.upper())
         issns = v.get("issns") or []
         issn_str = " / ".join(issns[:2]) if issns else "--"
         cov = f"{first_year[slug]}--{last_year[slug]}"
         lines.append(
+            f"{_tex_escape(name)} & "
             f"{_tex_escape(short)} & "
             f"{_tex_escape(issn_str)} & "
             f"{n_papers[slug]:,} & "
@@ -278,40 +280,34 @@ def table_venues_isbn(papers: pd.DataFrame, venues_cfg: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 # Appendix B — OpenAlex coverage by decade × venue
 # ---------------------------------------------------------------------------
-def table_coverage(papers: pd.DataFrame) -> None:
-    # We don't have a "known baseline" for the field's size per decade, so
-    # report raw paper counts instead, which is what a reader cares about
-    # when interpreting cross-decade comparisons.
+def table_coverage(papers: pd.DataFrame, venues_cfg: list[dict]) -> None:
     papers = papers.copy()
     papers["decade"] = (papers["year"] // 10) * 10
     decades = sorted(papers["decade"].unique())
-    # Top 8 venues by total papers for a compact table; the rest into "other"
-    top = (papers.groupby("venue_slug").size()
-           .sort_values(ascending=False).head(8).index.tolist())
-    papers["venue_grp"] = papers["venue_slug"].where(
-        papers["venue_slug"].isin(top), "other")
 
     pivot = papers.pivot_table(
-        index="venue_grp", columns="decade", values="paper_id",
+        index="venue_slug", columns="decade", values="paper_id",
         aggfunc="count", fill_value=0,
     )
-    # Reorder columns to match sorted decades
     pivot = pivot[decades]
-    # Row order: top venues by total, then 'other'
-    order = [v for v in top if v in pivot.index] + (
-        ["other"] if "other" in pivot.index else [])
-    pivot = pivot.loc[order]
+    # Row order: all 29 venues sorted by total papers descending
+    pivot["_total"] = pivot.sum(axis=1)
+    pivot = pivot.sort_values("_total", ascending=False).drop(columns=["_total"])
+
+    slug_to_name = {v["slug"]: v.get("name", v["slug"]) for v in venues_cfg}
+    slug_to_short = {v["slug"]: v.get("short", v["slug"].upper()) for v in venues_cfg}
 
     lines = [
         r"\begin{tabular}{l" + "r" * len(decades) + "}",
         r"\toprule",
-        r"\textbf{Venue} & " + " & ".join(f"\\textbf{{{d}s}}" for d in decades) + r" \\",
+        r"\textbf{Venue} & "
+        + " & ".join(f"\\textbf{{{d}s}}" for d in decades) + r" \\",
         r"\midrule",
     ]
     for slug, row in pivot.iterrows():
-        label = "Other (21 venues)" if slug == "other" else slug.upper()
+        short = slug_to_short.get(slug, slug.upper())
         nums = " & ".join(f"{int(n):,}" if n > 0 else "--" for n in row)
-        lines.append(f"{_tex_escape(label)} & {nums} \\\\")
+        lines.append(f"{_tex_escape(short)} & {nums} \\\\")
     total_row = pivot.sum(axis=0)
     lines.append(r"\midrule")
     lines.append(
@@ -480,7 +476,7 @@ def main() -> int:
     table_top_contributors(venue_stats)
     table_top_papers(venue_stats)
     table_venues_isbn(papers, venues_cfg)
-    table_coverage(papers)
+    table_coverage(papers, venues_cfg)
 
     print("[descriptive] figures…")
     fig_papers_by_year_stacked(papers, venues_cfg)
