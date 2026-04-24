@@ -362,7 +362,6 @@ def fig_papers_by_year_stacked(papers: pd.DataFrame,
                  colors=stack_palette)
     ax.set_xlabel("Year", fontsize=9)
     ax.set_ylabel("Papers (per year)", fontsize=9)
-    ax.set_title("Papers per year by venue", fontsize=10)
     ax.set_xlim(1967, 2025)
     ax.tick_params(labelsize=7)
     ax.legend(loc="upper left", ncols=2, fontsize=5.6, frameon=False,
@@ -412,7 +411,6 @@ def fig_team_size_over_time(papers: pd.DataFrame,
 
     ax.set_xlabel("Year", fontsize=9)
     ax.set_ylabel("Avg authors per paper", fontsize=9)
-    ax.set_title("Team size growth", fontsize=10)
     ax.set_xlim(1967, 2025)
     ax.tick_params(labelsize=7)
     ax.legend(loc="upper left", fontsize=6, frameon=False,
@@ -458,7 +456,6 @@ def fig_lotka(authors: pd.DataFrame) -> None:
               label=r"Lotka prediction ($\alpha=2$)")
     ax.set_xlabel("Papers per author, $k$")
     ax.set_ylabel("Number of authors, $f(k)$")
-    ax.set_title(f"Author productivity distribution ($\\alpha = {alpha:.2f}$)")
     ax.legend(frameon=False, fontsize=8)
     ax.grid(which="both", alpha=0.2)
     _save(fig, "04_lotka_productivity")

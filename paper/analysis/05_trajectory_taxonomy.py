@@ -175,7 +175,6 @@ def main() -> int:  # noqa: C901
                label=f"stay cutoff ({TAU_STAY:.0f})")
     ax.set_xlabel("Total path length (UMAP units)")
     ax.set_ylabel("Net displacement (UMAP units)")
-    ax.set_title("Author topic trajectories — path vs. net displacement")
     ax.set_xlim(0, lim)
     ax.set_ylim(0, lim)
     ax.grid(alpha=0.25)
@@ -274,11 +273,6 @@ def main() -> int:  # noqa: C901
             ax.set_aspect("equal")
             ax.tick_params(labelsize=6)
             ax.grid(alpha=0.15)
-    fig.suptitle(
-        "Exemplar author trajectories by class "
-        "(stayers / drifters / pivoters)",
-        fontsize=10, y=1.01,
-    )
     fig.tight_layout()
     _save(fig, "09_trajectory_examples")
     print("  ✓ figures/09_trajectory_examples.pdf")

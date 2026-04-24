@@ -680,7 +680,6 @@ def main() -> int:
     ax.set_xticks(x, [str(k) for k in ks])
     ax.set_xlabel("$K$")
     ax.set_ylabel(r"Micro-precision (\%)")
-    ax.set_title("Phantom collaborator precision under embedding ablations")
     ax.grid(axis="y", alpha=0.25)
     ax.legend(frameon=False, ncol=2, fontsize=8)
     _save(fig, f"08_ablation_precision_at_k{suffix}")

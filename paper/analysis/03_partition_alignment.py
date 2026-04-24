@@ -154,8 +154,9 @@ def main() -> int:
     lines = [
         r"\begin{tabular}{llrrrrr}",
         r"\toprule",
-        (r"\textbf{A} & \textbf{B} & \textbf{NMI} & \textbf{ARI} & "
-         r"\textbf{VI (bits)} & \textbf{$|A|$} & \textbf{$|B|$} \\"),
+        (r"\textbf{A} & \textbf{B} & "
+         r"\textbf{NMI ($\uparrow$)} & \textbf{ARI ($\uparrow$)} & "
+         r"\textbf{VI bits ($\downarrow$)} & \textbf{$|A|$} & \textbf{$|B|$} \\"),
         r"\midrule",
     ]
     alignment_dict = {}
@@ -239,10 +240,6 @@ def main() -> int:
     ax.set_yticks(range(len(y_labels)))
     ax.set_xticklabels(x_labels, rotation=75, ha="right", fontsize=6.5)
     ax.set_yticklabels(y_labels, fontsize=6.5)
-    ax.set_title(
-        "Semantic × coauthor community co-occurrence\n"
-        "(row-normalised — each row sums to 1 within top-22 coauthor comms)"
-    )
     cbar = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
     cbar.set_label("Share of semantic community", fontsize=8)
     _save(fig, "07_partition_cooccurrence")
@@ -291,10 +288,6 @@ def main() -> int:
                 density=True)
         ax.set_xlabel("Pairwise cosine similarity (5000-paper sample)")
         ax.set_ylabel("Density")
-        ax.set_title(
-            "Whitening compresses the pairwise-cosine distribution "
-            f"(top-1 PC accounts for {top1_var_share*100:.1f}\\% of variance)"
-        )
         ax.legend(frameon=False, fontsize=8)
         ax.grid(alpha=0.25)
         _save(fig, "06_whitening_impact")

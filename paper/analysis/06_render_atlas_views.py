@@ -395,12 +395,6 @@ def render_topic_space() -> None:
         ax.set_xlim(x_lo - pad * x_range, x_hi + pad * x_range)
         ax.set_ylim(y_lo - pad * y_range, y_hi + pad * y_range)
 
-    ax.set_title(
-        f"Semantic topic space — {len(tc):,} authors in UMAP-2D; "
-        f"top-{len(top_ids)} semantic Leiden communities coloured",
-        fontsize=11,
-    )
-
     # In-plot community labels at the size-weighted centroid of each
     # coloured community, with iterative repulsion so boxes don't
     # overlap. Mirrors the coauthor-overview treatment.
@@ -415,6 +409,10 @@ def render_topic_space() -> None:
     anchor_xy: list[tuple[float, float]] = []
     label_xy: list[list[float]] = []
     label_ranks: list[int] = []
+    # Minimum radial offset in data units: ensures that labels for
+    # communities whose centroid is close to the plot centre still start
+    # with a visible outward push rather than piling up on the middle.
+    min_radial = 0.08 * min(x_span, y_span)
     for rank, sid in enumerate(top_ids):
         mask = scs == sid
         if not mask.any():
@@ -425,8 +423,17 @@ def render_topic_space() -> None:
         bits = labels_by_sc.get(sid, ["?"])
         txt = " / ".join(bits[:2])
         anchor_xy.append((cx, cy))
-        label_xy.append([cx + 0.18 * (cx - cx_core),
-                         cy + 0.18 * (cy - cy_core)])
+        # Initial radial offset: 40 % of the community-to-centre vector,
+        # clamped to at least min_radial so near-centre labels still push
+        # outward. The Fig 2 coauthor overview uses 35 %; topic space
+        # has ~22 communities (vs 12), so a larger offset + stronger
+        # repulsion is needed to avoid overlap.
+        dx_c = cx - cx_core
+        dy_c = cy - cy_core
+        r = (dx_c * dx_c + dy_c * dy_c) ** 0.5 or 1.0
+        radial = max(0.40 * r, min_radial)
+        label_xy.append([cx + radial * dx_c / r,
+                         cy + radial * dy_c / r])
         label_texts.append(f"S{sid}\n{txt}")
         label_ranks.append(rank)
 
@@ -435,31 +442,34 @@ def render_topic_space() -> None:
     for t in label_texts:
         longest_line = max(len(ln) for ln in t.split("\n"))
         n_lines = len(t.split("\n"))
-        char_w_in = 0.072
-        line_h_in = 0.14
+        char_w_in = 0.068
+        line_h_in = 0.13
         width_in = longest_line * char_w_in + 0.14
         height_in = n_lines * line_h_in + 0.12
         box_half_w.append(0.5 * width_in / 9.0 * x_span)
         box_half_h.append(0.5 * height_in / 7.8 * y_span)
 
-    for _ in range(60):
+    # More aggressive padding (1.20 horizontal, 1.45 vertical) and
+    # twice as many iterations than the coauthor overview, because the
+    # topic-space cluster is denser (22 labels in the same plot area).
+    for _ in range(150):
         moved = False
         for i in range(len(label_xy)):
             for j in range(i + 1, len(label_xy)):
                 dx = label_xy[j][0] - label_xy[i][0]
                 dy = label_xy[j][1] - label_xy[i][1]
-                min_dx = (box_half_w[i] + box_half_w[j]) * 1.08
-                min_dy = (box_half_h[i] + box_half_h[j]) * 1.25
+                min_dx = (box_half_w[i] + box_half_w[j]) * 1.20
+                min_dy = (box_half_h[i] + box_half_h[j]) * 1.45
                 overlap_x = min_dx - abs(dx)
                 overlap_y = min_dy - abs(dy)
                 if overlap_x > 0 and overlap_y > 0:
                     if overlap_x < overlap_y:
-                        push = overlap_x * 0.55
+                        push = overlap_x * 0.6
                         sign = 1.0 if dx >= 0 else -1.0
                         label_xy[i][0] -= sign * push
                         label_xy[j][0] += sign * push
                     else:
-                        push = overlap_y * 0.55
+                        push = overlap_y * 0.6
                         sign = 1.0 if dy >= 0 else -1.0
                         label_xy[i][1] -= sign * push
                         label_xy[j][1] += sign * push
@@ -473,13 +483,13 @@ def render_topic_space() -> None:
             text,
             xy=anchor,
             xytext=(lx, ly),
-            ha="center", va="center", fontsize=8.0, fontweight="bold",
+            ha="center", va="center", fontsize=7.4, fontweight="bold",
             color="black",
-            bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
-                      alpha=0.9,
-                      edgecolor=_comm_color(rank), linewidth=1.1),
+            bbox=dict(boxstyle="round,pad=0.22", facecolor="white",
+                      alpha=0.92,
+                      edgecolor=_comm_color(rank), linewidth=1.0),
             arrowprops=dict(arrowstyle="-", color=_comm_color(rank),
-                            lw=0.8, alpha=0.85),
+                            lw=0.7, alpha=0.85),
             zorder=5,
         )
     _save(fig, "06_topic_space")

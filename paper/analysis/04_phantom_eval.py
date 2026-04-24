@@ -87,11 +87,6 @@ def main() -> int:
                 label=method_label[m])
     ax.set_xlabel("$K$ (number of phantom partners proposed per author)")
     ax.set_ylabel(r"Precision @ $K$ (\%)")
-    ax.set_title(
-        "Phantom collaborators realise at $\\sim$" +
-        f"{metrics['K=20']['phantom']['micro_precision']*100:.1f}" +
-        r"\% vs $<$1\% for random / popularity / same-venue baselines"
-    )
     ax.grid(alpha=0.25)
     ax.legend(frameon=False, loc="upper right", fontsize=8)
     ax.set_xticks(ks)
@@ -153,15 +148,6 @@ def main() -> int:
                    label=f"Mean rate ({base_rate:.3f}%)")
         ax.set_xlabel("Median pairwise cosine similarity (whitened, bucket)")
         ax.set_ylabel("Realised in 2020--2025 (%)")
-        # Equal-frequency quantile buckets → every point has ~the same n,
-        # so report it once in the subtitle rather than on each marker.
-        mean_n = int(np.mean(ns))
-        ax.set_title(
-            f"Calibration: higher semantic similarity → higher "
-            f"realisation rate ({len(calib)} equal-frequency buckets, "
-            f"n\u2248{mean_n:,} pairs each)",
-            fontsize=9.5,
-        )
         ax.grid(alpha=0.25)
         ax.legend(frameon=False, fontsize=8)
         _save(fig, "08_phantom_calibration")
