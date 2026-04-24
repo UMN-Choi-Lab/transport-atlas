@@ -93,7 +93,7 @@ def figure_authors_per_venue(papers: pd.DataFrame, venues_cfg) -> None:
     slug_to_short = {v["slug"]: v.get("short", v["slug"]) for v in venues_cfg}
     labels = [slug_to_short.get(s, s) for s in stats["venue_slug"]]
 
-    fig, ax = plt.subplots(figsize=(10.5, 4.5))
+    fig, ax = plt.subplots(figsize=(3.4, 2.6))
     x = np.arange(len(stats))
     ax.bar(
         x,
@@ -102,15 +102,16 @@ def figure_authors_per_venue(papers: pd.DataFrame, venues_cfg) -> None:
         color=OKABE_ITO[1],
         edgecolor="none",
         ecolor="#444444",
-        capsize=2.5,
+        capsize=1.5,
         width=0.8,
     )
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=70, ha="right")
-    ax.set_ylabel("Mean authors per paper")
-    ax.set_xlabel("Venue")
-    ax.set_title("Authors per paper by venue")
+    ax.set_xticklabels(labels, rotation=75, ha="right", fontsize=5.5)
+    ax.tick_params(axis="y", labelsize=7)
+    ax.set_ylabel("Mean authors per paper", fontsize=9)
+    ax.set_title("By venue", fontsize=10)
     ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
     _save(fig, "04_authors_per_venue_bar")
     print("  ✓ figures/04_authors_per_venue_bar.pdf")
 
@@ -273,6 +274,33 @@ def table_centrality_correlations(nodes: list[dict]) -> None:
     lines += [r"\bottomrule", r"\end{tabular}"]
     (TABLES / "05_centrality_correlations.tex").write_text("\n".join(lines) + "\n")
     print("  ✓ tables/05_centrality_correlations.tex")
+
+    # Heatmap companion figure
+    short_labels = {
+        "d": r"$d$", "s": r"$s$", "c": r"$c$",
+        "bc": r"$bc$", "bcw": r"$bc_w$",
+        "pr": r"$pr$", "prw": r"$pr_w$",
+    }
+    tick_labels = [short_labels[k] for k in labels]
+    fig, ax = plt.subplots(figsize=(5.2, 4.4))
+    im = ax.imshow(corr, cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect="equal")
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(tick_labels, fontsize=9)
+    ax.set_yticklabels(tick_labels, fontsize=9)
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            val = corr[i, j]
+            txt_color = "white" if abs(val) > 0.55 else "black"
+            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                    fontsize=7.5, color=txt_color)
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.03)
+    cbar.set_label(r"Kendall $\tau$", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(FIGURES / "05_centrality_heatmap.pdf")
+    fig.savefig(FIGURES / "05_centrality_heatmap.png", dpi=300)
+    plt.close(fig)
+    print("  ✓ figures/05_centrality_heatmap.pdf")
 
 
 def main() -> int:

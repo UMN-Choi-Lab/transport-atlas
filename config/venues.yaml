@@ -379,24 +379,29 @@ venues:
     # OFF by default: broad vehicular tech (comms + hardware).
 
   - slug: t-vt
-    enabled: true
+    enabled: false
     name: "IEEE Transactions on Vehicular Technology"
     short: "T-VT"
     issns: ["0018-9545", "1939-9359"]
     publisher: ieee
     jif_2024: 7.1
     quartile: Q1
-    # OFF by default: comms-heavy, ~30k+ papers would swamp the corpus.
+    # Disabled: OFDM / NOMA / MIMO / cognitive-radio content
+    # dominates and forms isolated communities (top authors Hanzo,
+    # Alouini, Ding) that are communications researchers rather than
+    # transportation researchers.
 
   - slug: vehcomm
-    enabled: true
+    enabled: false
     name: "Vehicular Communications"
     short: "VehComm"
     issns: ["2214-2096"]
     publisher: elsevier
     jif_2024: 6.5
     quartile: Q1
-    # OFF by default: V2X / 5G comms focus, not transportation research.
+    # Disabled: V2X / 5G comms focus; top authors (Niyato, Yu, Shen,
+    # Yuen) are communications researchers; content does not bridge to
+    # the transportation-research mainstream.
 
   - slug: auto-innov
     enabled: false

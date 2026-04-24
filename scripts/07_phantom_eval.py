@@ -568,8 +568,8 @@ def main() -> int:  # noqa: C901
                 "train_dist": near_neighbors.get(k, {}).get(nb, None),
             })
     cases.sort(key=lambda c: -c["sim"])
-    cases = cases[:30]
-    print(f"[phantom] found {len(cases)} realized-phantom cases (top-30 saved)",
+    cases = cases[:60]  # enough raw cases for ~20+ unique pairs after A/B dedup
+    print(f"[phantom] found {len(cases)} realized-phantom cases (top-60 saved)",
           flush=True)
 
     # ----------------------------------------------------------------

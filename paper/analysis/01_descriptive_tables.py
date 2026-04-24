@@ -183,7 +183,7 @@ def table_top_contributors(venue_stats: list[dict], venues_cfg: list[dict]) -> N
     order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
     vs = sorted(venue_stats, key=lambda v: order.get(v["slug"], 999))
     lines = [
-        r"\begin{tabular}{p{5.0cm}ll}",
+        r"\begin{tabular}{lll}",
         r"\toprule",
         r"\textbf{Venue} & \textbf{Top-5 contributors (papers)} & \textbf{Top-5 contributors (citations)} \\",
         r"\midrule",
@@ -199,7 +199,7 @@ def table_top_contributors(venue_stats: list[dict], venues_cfg: list[dict]) -> N
             f"{_tex_escape(a['name'])} ({a['cites']:,})"
             for a in top_c
         ) or "--"
-        venue_cell = f"{_tex_escape(v['name'])} ({_tex_escape(v['short'])})"
+        venue_cell = _tex_escape(v["short"])
         lines.append(
             f"{venue_cell} & {by_p} & {by_c} \\\\"
         )
@@ -215,9 +215,9 @@ def table_top_papers(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
     order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
     vs = sorted(venue_stats, key=lambda v: order.get(v["slug"], 999))
     lines = [
-        r"\begin{tabular}{p{5.0cm}llrrl}",
+        r"\begin{tabular}{lp{7.0cm}rrl}",
         r"\toprule",
-        (r"\textbf{Venue} & \textbf{Abbr.} & \textbf{Title (truncated)} & "
+        (r"\textbf{Venue} & \textbf{Title} & "
          r"\textbf{Year} & \textbf{Cites} & \textbf{First author} \\"),
         r"\midrule",
     ]
@@ -226,12 +226,9 @@ def table_top_papers(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
         for i, p in enumerate(top_papers):
             first_author = (p.get("authors_short", "") or "").split(";", 1)[0].strip()
             title = p["title"]
-            if len(title) > 60:
-                title = title[:57] + "…"
-            name_cell = _tex_escape(v["name"]) if i == 0 else ""
             short_cell = _tex_escape(v["short"]) if i == 0 else ""
             lines.append(
-                f"{name_cell} & {short_cell} & "
+                f"{short_cell} & "
                 f"{_tex_escape(title)} & "
                 f"{p.get('year') or '--'} & "
                 f"{p['cites']:,} & "
@@ -360,15 +357,18 @@ def fig_papers_by_year_stacked(papers: pd.DataFrame,
         "#D55E00", "#CC79A7", "#332288", "#117733",
     ][:len(top_venues)] + ["#999999"]
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(3.4, 2.6))
     ax.stackplot(years, np.vstack(data), labels=labels, linewidth=0,
                  colors=stack_palette)
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Papers (per year)")
-    ax.set_title("Papers per year, stacked by venue — 1967–2025")
+    ax.set_xlabel("Year", fontsize=9)
+    ax.set_ylabel("Papers (per year)", fontsize=9)
+    ax.set_title("Papers per year by venue", fontsize=10)
     ax.set_xlim(1967, 2025)
-    ax.legend(loc="upper left", ncols=2, fontsize=7, frameon=False)
+    ax.tick_params(labelsize=7)
+    ax.legend(loc="upper left", ncols=2, fontsize=5.6, frameon=False,
+              handlelength=1.2, columnspacing=0.8, labelspacing=0.3)
     ax.grid(alpha=0.2, axis="y")
+    fig.tight_layout()
     _save(fig, "04_papers_by_year_stacked")
     print(f"  ✓ figures/04_papers_by_year_stacked.pdf")
 
@@ -394,7 +394,7 @@ def fig_team_size_over_time(papers: pd.DataFrame,
     top_venues = venue_totals.head(6).index.tolist()
     slug_to_short = {v["slug"]: v.get("short", v["slug"]) for v in venues_cfg}
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(3.4, 2.6))
     for i, slug in enumerate(top_venues):
         sub = papers[papers["venue_slug"] == slug]
         yearly = sub.groupby("year")["n_authors"].mean()
@@ -402,25 +402,28 @@ def fig_team_size_over_time(papers: pd.DataFrame,
         smoothed = yearly.rolling(3, center=True, min_periods=1).mean()
         ax.plot(smoothed.index, smoothed.values,
                 label=slug_to_short.get(slug, slug),
-                color=OKABE_ITO[i], linewidth=1.5)
+                color=OKABE_ITO[i], linewidth=1.2)
 
     # Corpus-wide average as dashed reference line
     overall = papers.groupby("year")["n_authors"].mean().rolling(
         3, center=True, min_periods=1).mean()
     ax.plot(overall.index, overall.values, color="#666666",
-            linewidth=1.5, linestyle="--", label="All 29 venues")
+            linewidth=1.2, linestyle="--", label="All 36 venues")
 
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Average authors per paper (3-yr rolling mean)")
-    ax.set_title("Team size growth, 1967–2025")
+    ax.set_xlabel("Year", fontsize=9)
+    ax.set_ylabel("Avg authors per paper", fontsize=9)
+    ax.set_title("Team size growth", fontsize=10)
     ax.set_xlim(1967, 2025)
-    ax.legend(loc="upper left", fontsize=8, frameon=False)
+    ax.tick_params(labelsize=7)
+    ax.legend(loc="upper left", fontsize=6, frameon=False,
+              handlelength=1.2, labelspacing=0.3)
     ax.grid(alpha=0.2)
-    # Sun & Rahwan window annotation
+    # Sun & Rahwan window annotation at the top of the plot
     ax.axvspan(1990, 2015, alpha=0.08, color="#56B4E9")
-    ax.text(2002.5, 0.5, "Sun & Rahwan (2017) window",
-            ha="center", va="bottom", color="#56B4E9", fontsize=7, alpha=0.8,
+    ax.text(2002.5, 0.98, "S\\&R 2017 window",
+            ha="center", va="top", color="#56B4E9", fontsize=6, alpha=0.9,
             transform=ax.get_xaxis_transform())
+    fig.tight_layout()
     _save(fig, "04_team_size_over_time")
     print(f"  ✓ figures/04_team_size_over_time.pdf")
 

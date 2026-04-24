@@ -148,16 +148,19 @@ def main() -> int:
         ns = [c["n_pairs"] for c in calib]
         fig, ax = plt.subplots(figsize=(6, 3.8))
         ax.plot(xs, ys, marker="o", color=OKABE_ITO[4], linewidth=1.5)
-        for x, y, n in zip(xs, ys, ns):
-            ax.annotate(f"n={n:,}", (x, y), textcoords="offset points",
-                        xytext=(0, 6), ha="center", fontsize=6.5, alpha=0.7)
         base_rate = np.mean([c["realize_rate"] for c in calib]) * 100
         ax.axhline(base_rate, color=OKABE_ITO[5], linestyle=":", linewidth=1,
-                   label=f"Mean rate ({base_rate:.3f}\\%)")
+                   label=f"Mean rate ({base_rate:.3f}%)")
         ax.set_xlabel("Median pairwise cosine similarity (whitened, bucket)")
-        ax.set_ylabel(r"Realised in 2020--2025 (\%)")
+        ax.set_ylabel("Realised in 2020--2025 (%)")
+        # Equal-frequency quantile buckets → every point has ~the same n,
+        # so report it once in the subtitle rather than on each marker.
+        mean_n = int(np.mean(ns))
         ax.set_title(
-            "Calibration: higher semantic similarity → higher realisation rate"
+            f"Calibration: higher semantic similarity → higher "
+            f"realisation rate ({len(calib)} equal-frequency buckets, "
+            f"n\u2248{mean_n:,} pairs each)",
+            fontsize=9.5,
         )
         ax.grid(alpha=0.25)
         ax.legend(frameon=False, fontsize=8)
@@ -167,6 +170,18 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Table — top-30 realized-phantom cases
     # ------------------------------------------------------------------
+    # Dedupe: each phantom pair can appear seeded by either endpoint. Collapse
+    # to a single row keyed by the sorted (a, b) name pair, keeping the first
+    # (highest-similarity) occurrence.
+    seen_pairs: set[tuple[str, str]] = set()
+    unique_cases = []
+    for c in cases:
+        key = tuple(sorted((c["a_name"], c["b_name"])))
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
+        unique_cases.append(c)
+
     lines = [
         r"\begin{tabular}{lll rr}",
         r"\toprule",
@@ -174,7 +189,7 @@ def main() -> int:
          r"\textbf{Cos sim} & \textbf{Train dist} \\"),
         r"\midrule",
     ]
-    for i, c in enumerate(cases[:20], 1):
+    for i, c in enumerate(unique_cases[:20], 1):
         d_txt = (r"$\geq 4$" if c["train_dist"] is None
                  else str(int(c["train_dist"])))
         lines.append(

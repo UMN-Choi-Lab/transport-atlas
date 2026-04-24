@@ -184,15 +184,49 @@ def main() -> int:  # noqa: C901
     print("  ✓ figures/09_trajectory_scatter.pdf")
 
     # ------------------------------------------------------------------
-    # Figure — 6-panel examples (2 per class), ranked by n_papers_traj
-    # so we pick prolific / interpretable exemplars.
+    # Figure — 6-panel examples (2 per class). We prefer hand-picked
+    # household-name transportation researchers when they exist in the
+    # classified set; otherwise fall back to top-2 by citations among
+    # prolific trajectories in that class.
     # ------------------------------------------------------------------
+    # Household-name transportation researchers to prefer as exemplars,
+    # regardless of which class they end up in. Surname matching is
+    # case-insensitive on the OpenAlex canonical label (surname, first-name
+    # form). Order here is the preference tie-break within each class.
+    PREFERRED = [
+        "geroliminis, nikolas", "mahmassani, hani", "bhat, chandra",
+        "kockelman, kara", "hensher, david", "daganzo, carlos",
+        "abdel-aty, mohamed", "hoogendoorn, serge", "papageorgiou, markos",
+        "axhausen, kay", "ben-akiva, moshe", "ceder, avishai",
+    ]
+    # Label each preferred name with its actual class (or None if missing).
+    preferred_by_class: dict[str, list[pd.Series]] = {
+        "stayer": [], "drifter": [], "pivoter": [],
+    }
+    for target in PREFERRED:
+        target_l = target.lower()
+        matches = df[df["name"].str.lower().str.startswith(target_l)]
+        if matches.empty:
+            continue
+        row = matches.sort_values("citations", ascending=False).iloc[0]
+        cls = row["class"]
+        if cls in preferred_by_class:
+            preferred_by_class[cls].append(row)
+
     fig, axes = plt.subplots(2, 3, figsize=(8.5, 5.5))
     for col_idx, cls in enumerate(("stayer", "drifter", "pivoter")):
-        sub = df[df["class"] == cls].sort_values(
-            "n_papers_traj", ascending=False).head(20)
-        # Pick top-2 by citations among prolific exemplars
-        sub = sub.sort_values("citations", ascending=False).head(2)
+        picks: list[pd.Series] = list(preferred_by_class.get(cls, [])[:2])
+        if len(picks) < 2:
+            cls_df = df[df["class"] == cls]
+            filler = (cls_df.sort_values("n_papers_traj", ascending=False)
+                             .head(20)
+                             .sort_values("citations", ascending=False))
+            for _, row in filler.iterrows():
+                if len(picks) >= 2:
+                    break
+                if all(row["id"] != p["id"] for p in picks):
+                    picks.append(row)
+        sub = pd.DataFrame(picks[:2])
         for row_idx, (_, r) in enumerate(sub.iterrows()):
             ax = axes[row_idx, col_idx]
             bins = [b for b in trajs[str(int(r["id"]))]
@@ -200,20 +234,43 @@ def main() -> int:  # noqa: C901
             xs = [b["x"] for b in bins]
             ys = [b["y"] for b in bins]
             ns = [b["n"] for b in bins]
-            ax.plot(xs, ys, color=colors[cls], linewidth=1.8, alpha=0.8)
-            ax.scatter(xs, ys, s=[18 + 3*n for n in ns],
-                       color=colors[cls], edgecolors="black", linewidths=0.4)
-            # year annotations
+            ax.plot(xs, ys, color=colors[cls], linewidth=1.4, alpha=0.7)
+            # Marker area scales with sqrt(n) so prolific bins don't swamp
+            # lean ones; capped so adjacent circles don't overlap the arrow.
+            sizes = [min(14 + 4.0 * np.sqrt(n), 55) for n in ns]
+            ax.scatter(xs, ys, s=sizes,
+                       color=colors[cls], edgecolors="black",
+                       linewidths=0.4, alpha=0.7, zorder=3)
+            # Year annotations — place along the path with a small offset
+            # away from the circle; no leader line required.
             for b in bins:
                 ax.annotate(f"{b['p']}", (b["x"], b["y"]),
-                            fontsize=6.5, alpha=0.85,
-                            textcoords="offset points", xytext=(4, 3))
-            title = f"{r['name']}  ({cls})"
+                            fontsize=6.0, alpha=0.9,
+                            textcoords="offset points", xytext=(6, 4))
+            raw_name = str(r["name"] or "")
+            if "," in raw_name:
+                last, rest = raw_name.split(",", 1)
+                pretty = (last.strip().title() + ", " +
+                          " ".join(p.strip().title() for p in rest.split()))
+            else:
+                pretty = raw_name.title()
+            title = f"{pretty}  ({cls})"
             if len(title) > 42:
                 title = title[:40] + "…"
             ax.set_title(title, fontsize=8.5)
-            ax.set_xlim(-100, 100)
-            ax.set_ylim(-100, 100)
+            # Autoscale with a 20% padding so the exemplar fills its panel
+            # instead of clustering in the middle of a fixed ±100 window.
+            if xs:
+                x_mid = (max(xs) + min(xs)) / 2
+                y_mid = (max(ys) + min(ys)) / 2
+                span = max(
+                    max(xs) - min(xs),
+                    max(ys) - min(ys),
+                    20.0,
+                )
+                half = span * 0.65
+                ax.set_xlim(x_mid - half, x_mid + half)
+                ax.set_ylim(y_mid - half, y_mid + half)
             ax.set_aspect("equal")
             ax.tick_params(labelsize=6)
             ax.grid(alpha=0.15)

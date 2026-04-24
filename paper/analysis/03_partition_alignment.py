@@ -186,10 +186,18 @@ def main() -> int:
     # & cols so that matched communities sit on the diagonal band).
     # ------------------------------------------------------------------
     sem_sizes = df.groupby("semantic").size().sort_values(ascending=False)
-    top_sem = sem_sizes.index.tolist()         # all 22 non-misc semantic
+    top_sem = sem_sizes.index.tolist()         # all non-misc semantic
 
+    # Exclude misc-flagged coauthor communities: the misc bucket collapses
+    # hundreds of small islands and would dominate the "columns" without
+    # carrying a meaningful label.
+    coauth_comms_meta_pre = json.loads(
+        (ROOT / "data" / "processed" / "coauthor_network.json").read_text()
+    )["meta"]["communities"]
+    co_misc_ids = {c["id"] for c in coauth_comms_meta_pre if c.get("misc")}
     co_sizes = df.groupby("coauth").size().sort_values(ascending=False)
-    top_co = co_sizes.head(22).index.tolist()  # top 22 coauthor comms
+    co_nonmisc = [c for c in co_sizes.index if c not in co_misc_ids]
+    top_co = co_nonmisc[:22]
 
     mat = np.zeros((len(top_sem), len(top_co)), dtype=float)
     sem_idx = {s: i for i, s in enumerate(top_sem)}
