@@ -273,7 +273,7 @@ venues:
     # OFF: aviation-specific.
 
   - slug: cacie
-    enabled: false
+    enabled: true
     name: "Computer-Aided Civil and Infrastructure Engineering"
     short: "CACIE"
     issns: ["1093-9687", "1467-8667"]
@@ -338,7 +338,7 @@ venues:
   # mechatronics. Enable individually if you want that slice in the atlas.
 
   - slug: etrans
-    enabled: false
+    enabled: true
     name: "eTransportation"
     short: "eTransp"
     issns: ["2590-1168"]
@@ -349,7 +349,7 @@ venues:
     # transportation research in the conventional sense.
 
   - slug: geit
-    enabled: false
+    enabled: true
     name: "Green Energy and Intelligent Transportation"
     short: "GEIT"
     issns: ["2097-2512", "2773-1537"]
@@ -359,7 +359,7 @@ venues:
     # OFF by default: heavy on energy-systems / EV charging side.
 
   - slug: t-te
-    enabled: false
+    enabled: true
     name: "IEEE Transactions on Transportation Electrification"
     short: "T-TE"
     issns: ["2332-7782"]
@@ -369,7 +369,7 @@ venues:
     # OFF by default: power electronics for EV charging / traction drives.
 
   - slug: vtm
-    enabled: false
+    enabled: true
     name: "IEEE Vehicular Technology Magazine"
     short: "VT Mag"
     issns: ["1556-6072", "1556-6080"]
@@ -379,7 +379,7 @@ venues:
     # OFF by default: broad vehicular tech (comms + hardware).
 
   - slug: t-vt
-    enabled: false
+    enabled: true
     name: "IEEE Transactions on Vehicular Technology"
     short: "T-VT"
     issns: ["0018-9545", "1939-9359"]
@@ -389,7 +389,7 @@ venues:
     # OFF by default: comms-heavy, ~30k+ papers would swamp the corpus.
 
   - slug: vehcomm
-    enabled: false
+    enabled: true
     name: "Vehicular Communications"
     short: "VehComm"
     issns: ["2214-2096"]

@@ -118,7 +118,10 @@ def table_corpus_summary(papers: pd.DataFrame, authors: pd.DataFrame,
     total_authors = len(authors)
     orcid_pct = 100 * authors["orcid"].notna().mean()
     total_cites = int(papers["cited_by_count"].sum())
-    crossref_pct = 100 * (papers["cited_by_source"] == "crossref").mean()
+    if "cited_by_source" in papers.columns:
+        crossref_pct = 100 * (papers["cited_by_source"] == "crossref").mean()
+    else:
+        crossref_pct = None
 
     rows = [
         ("Papers", f"{total_papers:,}"),
@@ -127,8 +130,9 @@ def table_corpus_summary(papers: pd.DataFrame, authors: pd.DataFrame,
         ("Unique authors (deduped)", f"{total_authors:,}"),
         ("Authors with ORCID", f"{orcid_pct:.1f}\\%"),
         ("Total citations", f"{total_cites:,}"),
-        ("Citations sourced from Crossref", f"{crossref_pct:.1f}\\%"),
     ]
+    if crossref_pct is not None:
+        rows.append(("Citations sourced from Crossref", f"{crossref_pct:.1f}\\%"))
     lines = [
         r"\begin{tabular}{lr}",
         r"\toprule",
@@ -145,9 +149,9 @@ def table_corpus_summary(papers: pd.DataFrame, authors: pd.DataFrame,
 # ---------------------------------------------------------------------------
 # T2 — Per-venue stats (extended Sun & Rahwan Table 2)
 # ---------------------------------------------------------------------------
-def table_venue_stats(venue_stats: list[dict]) -> None:
-    # Sort by papers descending (matches our venues.html default)
-    vs = sorted(venue_stats, key=lambda v: -v["papers"])
+def table_venue_stats(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
+    order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
+    vs = sorted(venue_stats, key=lambda v: order.get(v["slug"], 999))
     lines = [
         r"\begin{tabular}{p{5.2cm}rrrrrrrr}",
         r"\toprule",
@@ -175,10 +179,11 @@ def table_venue_stats(venue_stats: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 # T3 — Top-10 contributors per venue
 # ---------------------------------------------------------------------------
-def table_top_contributors(venue_stats: list[dict]) -> None:
-    vs = sorted(venue_stats, key=lambda v: -v["papers"])
+def table_top_contributors(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
+    order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
+    vs = sorted(venue_stats, key=lambda v: order.get(v["slug"], 999))
     lines = [
-        r"\begin{tabular}{lll}",
+        r"\begin{tabular}{p{5.0cm}ll}",
         r"\toprule",
         r"\textbf{Venue} & \textbf{Top-5 contributors (papers)} & \textbf{Top-5 contributors (citations)} \\",
         r"\midrule",
@@ -194,8 +199,9 @@ def table_top_contributors(venue_stats: list[dict]) -> None:
             f"{_tex_escape(a['name'])} ({a['cites']:,})"
             for a in top_c
         ) or "--"
+        venue_cell = f"{_tex_escape(v['name'])} ({_tex_escape(v['short'])})"
         lines.append(
-            f"{_tex_escape(v['short'])} & {by_p} & {by_c} \\\\"
+            f"{venue_cell} & {by_p} & {by_c} \\\\"
         )
     lines += [r"\bottomrule", r"\end{tabular}"]
     (TABLES / "04_top_contributors.tex").write_text("\n".join(lines) + "\n")
@@ -205,25 +211,27 @@ def table_top_contributors(venue_stats: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 # T4 — Top-3 most-cited papers per venue (full 10 is too big for the body)
 # ---------------------------------------------------------------------------
-def table_top_papers(venue_stats: list[dict]) -> None:
-    vs = sorted(venue_stats, key=lambda v: -v["papers"])
+def table_top_papers(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
+    order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
+    vs = sorted(venue_stats, key=lambda v: order.get(v["slug"], 999))
     lines = [
-        r"\begin{tabular}{llrrl}",
+        r"\begin{tabular}{p{5.0cm}llrrl}",
         r"\toprule",
-        (r"\textbf{Venue} & \textbf{Title (truncated)} & "
+        (r"\textbf{Venue} & \textbf{Abbr.} & \textbf{Title (truncated)} & "
          r"\textbf{Year} & \textbf{Cites} & \textbf{First author} \\"),
         r"\midrule",
     ]
     for v in vs:
         top_papers = v.get("top_papers", [])[:3]
         for i, p in enumerate(top_papers):
-            # First author from authors_short (before the first semicolon)
             first_author = (p.get("authors_short", "") or "").split(";", 1)[0].strip()
             title = p["title"]
             if len(title) > 60:
                 title = title[:57] + "…"
+            name_cell = _tex_escape(v["name"]) if i == 0 else ""
+            short_cell = _tex_escape(v["short"]) if i == 0 else ""
             lines.append(
-                f"{_tex_escape(v['short']) if i == 0 else ''} & "
+                f"{name_cell} & {short_cell} & "
                 f"{_tex_escape(title)} & "
                 f"{p.get('year') or '--'} & "
                 f"{p['cites']:,} & "
@@ -290,9 +298,9 @@ def table_coverage(papers: pd.DataFrame, venues_cfg: list[dict]) -> None:
         aggfunc="count", fill_value=0,
     )
     pivot = pivot[decades]
-    # Row order: all 29 venues sorted by total papers descending
-    pivot["_total"] = pivot.sum(axis=1)
-    pivot = pivot.sort_values("_total", ascending=False).drop(columns=["_total"])
+    # Row order: venues.yaml declaration order (matches Appendix A Table)
+    order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
+    pivot = pivot.loc[sorted(pivot.index, key=lambda s: order.get(s, 999))]
 
     slug_to_name = {v["slug"]: v.get("name", v["slug"]) for v in venues_cfg}
     slug_to_short = {v["slug"]: v.get("short", v["slug"].upper()) for v in venues_cfg}
@@ -472,9 +480,9 @@ def main() -> int:
 
     print("[descriptive] tables…")
     table_corpus_summary(papers, authors, venue_stats)
-    table_venue_stats(venue_stats)
-    table_top_contributors(venue_stats)
-    table_top_papers(venue_stats)
+    table_venue_stats(venue_stats, venues_cfg)
+    table_top_contributors(venue_stats, venues_cfg)
+    table_top_papers(venue_stats, venues_cfg)
     table_venues_isbn(papers, venues_cfg)
     table_coverage(papers, venues_cfg)
 
