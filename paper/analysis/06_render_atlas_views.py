@@ -101,43 +101,65 @@ def render_coauthor_overview() -> None:
         for c in comms
     ])
 
+    # Restrict both sub-figures to the LCC so (a) and (b) share an
+    # identical background (same node positions, same edges, same crop,
+    # same colouring) and the only visible difference between the two
+    # panels is the label layer (community ids vs. top-degree authors).
+    import networkx as nx
+    G = nx.Graph()
+    for i, _ in enumerate(nodes):
+        G.add_node(i)
+    for e in edges:
+        if e["source"] in ids and e["target"] in ids:
+            G.add_edge(ids[e["source"]], ids[e["target"]])
+    lcc_idx = max(nx.connected_components(G), key=len)
+    lcc_mask = np.array([i in lcc_idx for i in range(len(nodes))])
+    print(f"[atlas-fig] LCC has {int(lcc_mask.sum()):,} nodes "
+          f"(of {len(nodes):,})")
+
     # Edge coordinates — rasterize to keep the PDF small.
-    edge_xy = np.array([
-        [[xs[ids[e["source"]]], ys[ids[e["source"]]]],
-         [xs[ids[e["target"]]], ys[ids[e["target"]]]]]
-        for e in edges
-        if e["source"] in ids and e["target"] in ids
+    lcc_edge_xy = np.array([
+        [[xs[a], ys[a]], [xs[b], ys[b]]]
+        for a, b in G.subgraph(lcc_idx).edges()
     ], dtype=np.float32)
 
-    fig, ax = plt.subplots(figsize=(9.0, 8.2))
-    lc = LineCollection(edge_xy, colors=(0.35, 0.35, 0.35, 0.06),
-                        linewidths=0.22, rasterized=True)
-    ax.add_collection(lc)
-    # Node size: wider dynamic range so prolific hubs visually dominate,
-    # following the style of Sun & Rahwan Fig 3.
-    sizes = 2.0 + 4.5 * np.sqrt(papers.clip(min=1))
-    ax.scatter(xs, ys, s=sizes, c=node_colors, linewidths=0,
-               alpha=0.88, rasterized=True)
-    # Crop to the main cluster. ForceAtlas2 places disconnected island
-    # communities on an outer orbit that compresses the mainland into a
-    # small central blob; zooming to the 5-95 percentile range of the
-    # coloured top-12 nodes restores visual detail.
-    core_mask = np.array([c in comm_rank for c in comms])
-    if core_mask.any():
+    # Crop rule shared by both panels: 2--98 percentile of the coloured
+    # top-12 LCC communities, so the layout orbits don't squeeze the
+    # visible structure. Computed once and reused on both axes.
+    core_lcc_mask = lcc_mask & np.array([c in comm_rank for c in comms])
+    if core_lcc_mask.any():
         pad = 0.06
-        x_lo, x_hi = np.percentile(xs[core_mask], [2, 98])
-        y_lo, y_hi = np.percentile(ys[core_mask], [2, 98])
-        x_range = x_hi - x_lo
-        y_range = y_hi - y_lo
-        ax.set_xlim(x_lo - pad * x_range, x_hi + pad * x_range)
-        ax.set_ylim(y_lo - pad * y_range, y_hi + pad * y_range)
-    ax.set_aspect("equal")
-    ax.set_xticks([]); ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+        x_lo_d, x_hi_d = np.percentile(xs[core_lcc_mask], [2, 98])
+        y_lo_d, y_hi_d = np.percentile(ys[core_lcc_mask], [2, 98])
+        x_range = x_hi_d - x_lo_d
+        y_range = y_hi_d - y_lo_d
+        xlim = (x_lo_d - pad * x_range, x_hi_d + pad * x_range)
+        ylim = (y_lo_d - pad * y_range, y_hi_d + pad * y_range)
+    else:
+        xlim = ylim = None
+
+    def _draw_background(ax):
+        lc = LineCollection(lcc_edge_xy, colors=(0.35, 0.35, 0.35, 0.06),
+                            linewidths=0.22, rasterized=True)
+        ax.add_collection(lc)
+        # Node size: wider dynamic range so prolific hubs visually
+        # dominate, following the style of Sun & Rahwan Fig 3.
+        sizes_lcc = 2.0 + 4.5 * np.sqrt(papers[lcc_mask].clip(min=1))
+        ax.scatter(xs[lcc_mask], ys[lcc_mask],
+                   s=sizes_lcc, c=node_colors[lcc_mask],
+                   linewidths=0, alpha=0.88, rasterized=True)
+        if xlim is not None:
+            ax.set_xlim(*xlim); ax.set_ylim(*ylim)
+        ax.set_aspect("equal")
+        ax.set_xticks([]); ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+    fig, ax = plt.subplots(figsize=(9.0, 8.2))
+    _draw_background(ax)
     ax.set_title(
-        f"Coauthor network — {len(nodes):,} authors, "
-        f"{len(edges):,} edges; top-12 Leiden communities colored",
+        f"Largest connected component ({int(lcc_mask.sum()):,} authors); "
+        f"top-12 Leiden communities coloured",
         fontsize=11,
     )
 
@@ -148,16 +170,16 @@ def render_coauthor_overview() -> None:
     # overlaps between label bounding boxes.
     labels_by_id = {c["id"]: (c.get("label_words") or ["?"])[:2]
                     for c in net["meta"]["communities"]}
-    weights_core = degrees[core_mask].clip(min=1).astype(float) if core_mask.any() else None
-    cx_core = float(np.average(xs[core_mask], weights=weights_core)) if core_mask.any() else 0.0
-    cy_core = float(np.average(ys[core_mask], weights=weights_core)) if core_mask.any() else 0.0
+    weights_core = degrees[core_lcc_mask].clip(min=1).astype(float) if core_lcc_mask.any() else None
+    cx_core = float(np.average(xs[core_lcc_mask], weights=weights_core)) if core_lcc_mask.any() else 0.0
+    cy_core = float(np.average(ys[core_lcc_mask], weights=weights_core)) if core_lcc_mask.any() else 0.0
 
     anchor_xy: list[tuple[float, float]] = []
     label_xy: list[list[float]] = []
     label_texts: list[str] = []
     label_ranks: list[int] = []
     for rank, cid in enumerate(top_comms):
-        mask = comms == cid
+        mask = (comms == cid) & lcc_mask
         if not mask.any():
             continue
         w = degrees[mask].clip(min=1).astype(float)
@@ -237,45 +259,14 @@ def render_coauthor_overview() -> None:
     print("  ✓ figures/05_coauthor_overview.pdf")
 
     # ------------------------------------------------------------------
-    # Fig 5b — top-degree-labeled LCC (analog of Sun & Rahwan Fig 3).
-    # Show only giant connected component and annotate authors with
-    # degree >= LABEL_DEGREE (matches S&R's d >= 40 threshold at scale).
+    # Fig 5b — same LCC background as Fig 5a; only the label layer
+    # changes (community C0--C11 -> top-degree author names). Using the
+    # identical _draw_background helper guarantees pixel-for-pixel
+    # matching node positions, edges, colours, and crop between the two
+    # sub-figures, which the side-by-side caption in §5 depends on.
     # ------------------------------------------------------------------
-    import networkx as nx
-    G = nx.Graph()
-    for i, _ in enumerate(nodes): G.add_node(i)
-    for e in edges:
-        if e["source"] in ids and e["target"] in ids:
-            G.add_edge(ids[e["source"]], ids[e["target"]])
-    lcc_idx = max(nx.connected_components(G), key=len)
-    lcc_mask = np.array([i in lcc_idx for i in range(len(nodes))])
-    print(f"[atlas-fig] LCC has {int(lcc_mask.sum()):,} nodes "
-          f"(of {len(nodes):,})")
-
-    fig, ax = plt.subplots(figsize=(9.0, 8.4))
-    lc_edges = [
-        [[xs[a], ys[a]], [xs[b], ys[b]]]
-        for a, b in G.subgraph(lcc_idx).edges()
-    ]
-    lc = LineCollection(lc_edges, colors=(0.35, 0.35, 0.35, 0.06),
-                        linewidths=0.22, rasterized=True)
-    ax.add_collection(lc)
-    node_sizes_lcc = 2.0 + 4.5 * np.sqrt(papers[lcc_mask].clip(min=1))
-    ax.scatter(xs[lcc_mask], ys[lcc_mask],
-               s=node_sizes_lcc,
-               c=node_colors[lcc_mask], linewidths=0, alpha=0.88,
-               rasterized=True)
-    # Crop to the mainland region of the LCC (same rule as overview) so
-    # the layout orbits don't squeeze the visible structure.
-    core_lcc_mask = lcc_mask & np.array([c in comm_rank for c in comms])
-    if core_lcc_mask.any():
-        pad = 0.06
-        x_lo, x_hi = np.percentile(xs[core_lcc_mask], [2, 98])
-        y_lo, y_hi = np.percentile(ys[core_lcc_mask], [2, 98])
-        x_range = x_hi - x_lo
-        y_range = y_hi - y_lo
-        ax.set_xlim(x_lo - pad * x_range, x_hi + pad * x_range)
-        ax.set_ylim(y_lo - pad * y_range, y_hi + pad * y_range)
+    fig, ax = plt.subplots(figsize=(9.0, 8.2))
+    _draw_background(ax)
 
     # Label ~40 authors, but select the top-K per top-community so the
     # labels are spread over the plot rather than piled up in the single
