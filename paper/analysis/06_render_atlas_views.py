@@ -157,11 +157,6 @@ def render_coauthor_overview() -> None:
 
     fig, ax = plt.subplots(figsize=(9.0, 8.2))
     _draw_background(ax)
-    ax.set_title(
-        f"Largest connected component ({int(lcc_mask.sum()):,} authors); "
-        f"top-12 Leiden communities coloured",
-        fontsize=11,
-    )
 
     # In-plot community labels: start at each community's degree-weighted
     # centroid, then push outward along the radial direction so labels fan
@@ -341,12 +336,6 @@ def render_coauthor_overview() -> None:
     ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_title(
-        f"Largest connected component ({int(lcc_mask.sum()):,} authors); "
-        f"top-{LABELS_PER_COMM}-per-community anchors plus top-{EXTRA_TOP} "
-        f"by degree ($d \\geq {min_d}$)",
-        fontsize=11,
-    )
     _save(fig, "05_lcc_labeled")
     print("  ✓ figures/05_lcc_labeled.pdf")
 
