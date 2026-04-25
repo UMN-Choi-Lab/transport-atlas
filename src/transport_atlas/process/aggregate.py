@@ -125,22 +125,32 @@ def _venue_stats(papers: pd.DataFrame, venues: list[dict]) -> list[dict]:
         n_unique = len(unique_authors)
         papers_per_author = (n_papers / n_unique) if n_unique else 0.0
 
-        # Top contributors for this venue
+        # Top contributors for this venue. Sort by (-count, name, key) so that
+        # the published top-K is deterministic when multiple authors are tied
+        # on the primary metric — without the secondary keys, dict-iteration
+        # order at ties produced spurious table churn between regens.
         papers_counter = per_venue_author_papers.get(slug, Counter())
         cites_counter = per_venue_author_cites.get(slug, Counter())
         top_by_papers = [
             {"name": key_to_name.get(k, k), "key": k, "n_papers": c}
-            for k, c in papers_counter.most_common(15)
+            for k, c in sorted(
+                papers_counter.items(),
+                key=lambda kv: (-kv[1], key_to_name.get(kv[0], kv[0]), kv[0]),
+            )[:15]
         ]
         top_by_cites = [
             {"name": key_to_name.get(k, k), "key": k, "cites": c,
              "n_papers": papers_counter.get(k, 0)}
-            for k, c in cites_counter.most_common(15)
+            for k, c in sorted(
+                cites_counter.items(),
+                key=lambda kv: (-kv[1], key_to_name.get(kv[0], kv[0]), kv[0]),
+            )[:15]
         ]
-        # Top 10 most-cited papers in this venue
+        # Top 10 most-cited papers in this venue. DOI then title as
+        # tie-breakers for determinism.
         top_papers = sorted(
             per_venue_top_papers.get(slug, []),
-            key=lambda p: -p["cites"],
+            key=lambda p: (-p["cites"], p.get("doi") or "", p.get("title") or ""),
         )[:10]
 
         out.append({
