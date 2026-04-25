@@ -14,6 +14,10 @@
 #   ./docker/run_embed.sh trajectories         # paper/analysis/05_trajectory_taxonomy.py
 #   ./docker/run_embed.sh analysis <path> …    # arbitrary paper/analysis/*.py
 #
+# Site build:
+#   ./docker/run_embed.sh annotate             # scripts/03b_annotate_all_coauthors.py
+#   ./docker/run_embed.sh render               # scripts/04_render.py
+#
 # Misc:
 #   ./docker/run_embed.sh shell                # interactive bash in the container
 set -euo pipefail
@@ -88,6 +92,14 @@ case "$CMD" in
     exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python paper/analysis/05_trajectory_taxonomy.py "$@"
     ;;
+  annotate)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/03b_annotate_all_coauthors.py "$@"
+    ;;
+  render)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/04_render.py "$@"
+    ;;
   analysis)
     # Pass-through for any other paper/analysis script: first arg is the path.
     if [ $# -lt 1 ]; then
@@ -100,7 +112,7 @@ case "$CMD" in
     exec docker run -it "${COMMON_ARGS[@]}" "$IMAGE" bash
     ;;
   *)
-    echo "usage: $0 {embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|analysis|shell}" >&2
+    echo "usage: $0 {embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|annotate|render|analysis|shell}" >&2
     exit 2
     ;;
 esac

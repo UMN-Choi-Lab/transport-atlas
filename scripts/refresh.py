@@ -6,6 +6,7 @@ Checkpointed: reruns skip completed work unless --force is given.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 import time
@@ -17,6 +18,17 @@ from transport_atlas.ingest import elsevier, ieee, openalex
 from transport_atlas.process import aggregate, coauthor_graph, dedupe
 from transport_atlas.site import render
 from transport_atlas.utils import config
+
+
+def _run_annotate_all_coauthors() -> None:
+    """Load scripts/03b_annotate_all_coauthors.py (leading-digit name) and call main()."""
+    script = Path(__file__).resolve().parent / "03b_annotate_all_coauthors.py"
+    spec = importlib.util.spec_from_file_location("annotate_all_coauthors", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    rc = mod.main()
+    if rc:
+        raise SystemExit(rc)
 
 
 def main() -> int:
@@ -43,6 +55,7 @@ def main() -> int:
     t = time.time(); dedupe.run(); timings["dedupe"] = round(time.time() - t, 1)
     t = time.time(); aggregate.run(); timings["aggregate"] = round(time.time() - t, 1)
     t = time.time(); coauthor_graph.run(); timings["graph"] = round(time.time() - t, 1)
+    t = time.time(); _run_annotate_all_coauthors(); timings["annotate_ac"] = round(time.time() - t, 1)
     t = time.time(); render.run(); timings["render"] = round(time.time() - t, 1)
 
     timings["total"] = round(time.time() - t0, 1)

@@ -841,12 +841,24 @@ function updateSelectedPanel(n) {
   const box = document.getElementById('selected');
   if (!n) { box.innerHTML = ''; return; }
   const neighbors = edges.filter(x => x.source === n || x.target === n).length;
+  const acMissing = !Array.isArray(n.ac);
   const acList = Array.isArray(n.ac) ? n.ac : [];
   const acTotal = acList.length;
   const subj = encodeURIComponent(`Transport Atlas: wrong attribution for "${n.label}"`);
   const body = encodeURIComponent(reportBodyForNode(n));
   let html = `<div class="name">${escHtml(n.label)}</div>`
     + `<div class="stat">${n.papers} papers · ${neighbors} in view / ${acTotal} total co-authors · last ${n.last_year}</div>`;
+
+  if (acMissing) {
+    html += `<div style="margin-top:8px;padding:4px 6px;border-radius:3px;`
+         + `background:#3f2d12;color:#fbbf24;font-size:11px;">`
+         + `⚠ Co-author list unavailable — re-run scripts/03b_annotate_all_coauthors.py.`
+         + `</div>`;
+  } else if (!acList.length) {
+    html += `<div style="margin-top:8px;color:#9ca3af;font-size:11px;">`
+         + `Direct co-authors: 0 in this corpus.`
+         + `</div>`;
+  }
 
   // Full co-author list (includes 1-collab ties filtered out of the graph)
   if (acList.length) {
