@@ -28,7 +28,7 @@ PAGES = [
     ("topic_space.html", "topic", "topic_space.html"),
     ("trajectories.html", "trajectories", "trajectories.html"),
     ("combined.html", "combined", "combined.html"),
-    # ("reviewers.html", "reviewers", "reviewers.html"),  # private — served from fly.io, not gh-pages
+    ("reviewers.html", "reviewers", "reviewers.html"),
 ]
 
 
@@ -62,14 +62,13 @@ def run() -> dict:
     data_dst = out / "data"
     data_dst.mkdir(parents=True, exist_ok=True)
 
-    # Copy data JSONs to site/data/ (topic-space files are optional — fail soft).
-    # NOTE: reviewer_index.json and reviewer_authors.bin are intentionally NOT shipped
-    # to the public atlas — the Reviewer Finder runs on the private fly.io deploy.
+    # Copy data JSONs to site/data/ (topic-space files are optional — fail soft)
     for name in ["papers.json", "by_year.json", "coauthor_network.json", "top_hubs.json",
                  "author_rankings.json", "venue_stats.json",
                  "topic_coords.json", "author_similar.json", "author_trajectories.json",
                  "trajectory_taxonomy.json",
-                 "semantic_communities.json", "combined_communities.json"]:
+                 "semantic_communities.json", "combined_communities.json",
+                 "reviewer_index.json", "reviewer_authors.bin"]:
         src = processed / name
         if src.exists():
             shutil.copy2(src, data_dst / name)
