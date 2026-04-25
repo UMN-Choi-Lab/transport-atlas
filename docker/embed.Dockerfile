@@ -26,6 +26,8 @@ RUN pip install --no-cache-dir \
     'unidecode>=1.3' \
     'rapidfuzz>=3.6' \
     'matplotlib>=3.7' \
-    'python-dotenv>=1.0'
+    'python-dotenv>=1.0' \
+    'optimum[onnxruntime]>=1.20' \
+    'huggingface_hub>=0.24'
 
 WORKDIR /work

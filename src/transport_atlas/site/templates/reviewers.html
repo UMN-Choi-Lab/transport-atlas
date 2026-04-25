@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+{% block title %}Reviewer Finder — Transport Atlas{% endblock %}
+
+{% block content %}
+<style>
+  #rev-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .panel h2 { margin: 0 0 6px; font-size: 16px; }
+  .panel .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 10px; }
+  .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .form-row label { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .3px; text-transform: uppercase; }
+  textarea, input[type="text"] {
+    font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; resize: vertical;
+  }
+  textarea { min-height: 70px; }
+  #rev-abstract { min-height: 140px; }
+  .form-inline { display: flex; gap: 14px; flex-wrap: wrap; align-items: end; }
+  .form-inline .form-row { flex: 1 1 200px; margin-bottom: 0; }
+  #rev-go {
+    background: var(--accent); color: #fff; border: none; padding: 10px 18px;
+    font-weight: 600; border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+  #rev-go:disabled { background: #94a3b8; cursor: not-allowed; }
+  #rev-go:hover:not(:disabled) { background: #1559bf; }
+  #rev-status { font-size: 12.5px; color: var(--muted); margin-top: 8px; min-height: 18px; }
+  #rev-status.err { color: #b91c1c; }
+  #rev-status.ok { color: #047857; }
+  .progress { height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; margin-top: 6px; display: none; }
+  .progress.show { display: block; }
+  .progress > div { height: 100%; background: var(--accent); width: 0%; transition: width .15s; }
+
+  table.results { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.results th, table.results td {
+    padding: 6px 10px; border-bottom: 1px solid #f1f1f1; text-align: left; vertical-align: top;
+  }
+  table.results th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .3px; background: #fafafa; }
+  table.results tr:hover td { background: #f7faff; }
+  table.results .num { font-variant-numeric: tabular-nums; text-align: right; }
+  table.results .name { font-weight: 600; }
+  table.results .name a { color: inherit; text-decoration: none; }
+  table.results .name a:hover { color: var(--accent); }
+  table.results .concepts { color: var(--muted); font-size: 12px; }
+  table.results .coi-1 { color: #b91c1c; font-weight: 600; }
+  table.results .coi-2 { color: #d97706; }
+  table.results .coi-3 { color: #65a30d; }
+  table.results .coi-x { color: var(--muted); }
+  .preset-btn {
+    background: #f1f5f9; border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px; font-size: 11.5px; color: #334155; cursor: pointer; margin-right: 6px;
+  }
+  .preset-btn:hover { background: #e2e8f0; }
+  #rev-warn {
+    background: #fef3c7; border: 1px solid #fde68a; color: #92400e;
+    padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;
+  }
+  #rev-warn code { background: #fff7e6; padding: 1px 5px; border-radius: 3px; }
+</style>
+
+<h2 style="margin-top:0;font-size:20px;">Reviewer Finder <span class="sub" style="font-size:12px;color:var(--muted);font-weight:400;">— SPECTER2 cosine match against {{ "{:,}".format(graph_report.nodes) }} indexed authors</span></h2>
+<p class="muted" style="font-size:13px; max-width:900px;">
+  Paste a paper's title and abstract. We embed it with SPECTER2 (Cohan et&nbsp;al. 2020 / Singh et&nbsp;al. 2023) in your browser,
+  then rank authors by cosine similarity to their citation- and recency-weighted SPECTER2 author centroid.
+  Optional: enter your ORCID or name to filter out 1- and 2-hop coauthors (COI). Everything runs locally —
+  the query never leaves your machine.
+</p>
+
+{% if specter2_is_default %}
+<div id="rev-warn">
+  <b>Reviewer Finder is not yet wired up.</b> The SPECTER2 ONNX model has not been published to a HF Hub
+  repo for this deploy. Run <code>./docker/run_embed.sh export-specter2-onnx</code>, then
+  <code>./docker/run_embed.sh render</code>, then redeploy. (Current placeholder repo:
+  <code>{{ specter2_repo }}</code>; embedding dim won't match the indexed authors.)
+</div>
+{% endif %}
+
+<div id="rev-layout">
+
+  <div class="panel">
+    <h2>Query</h2>
+    <div class="sub">Try a preset:
+      <button class="preset-btn" data-preset="cav">CAV perception</button>
+      <button class="preset-btn" data-preset="flow">Macroscopic traffic flow</button>
+      <button class="preset-btn" data-preset="ev">EV charging behavior</button>
+      <button class="preset-btn" data-preset="logit">Discrete choice / logit</button>
+    </div>
+    <div class="form-row">
+      <label for="rev-title">Title</label>
+      <textarea id="rev-title" placeholder="Diffusion models for trajectory prediction in mixed traffic"></textarea>
+    </div>
+    <div class="form-row">
+      <label for="rev-abstract">Abstract</label>
+      <textarea id="rev-abstract" placeholder="Forecasting the joint trajectories of human-driven and autonomous vehicles at unsignalized intersections..."></textarea>
+    </div>
+    <div class="form-inline">
+      <div class="form-row" style="flex:2 1 280px;">
+        <label for="rev-submitter">Submitter (optional, for COI) — ORCID or "Last, First"</label>
+        <input id="rev-submitter" type="text" placeholder="0000-0001-7140-537X  or  choi, seongjin">
+      </div>
+      <div class="form-row" style="flex:0 1 110px;">
+        <label for="rev-topn">Top N</label>
+        <select id="rev-topn">
+          <option>15</option><option selected>30</option><option>50</option><option>100</option>
+        </select>
+      </div>
+      <div class="form-row" style="flex:0 1 140px;">
+        <label for="rev-coi-hops">Exclude COI ≤ hops</label>
+        <select id="rev-coi-hops">
+          <option value="0">none</option>
+          <option value="1">1 (direct)</option>
+          <option value="2" selected>2 (direct + co-coauthor)</option>
+        </select>
+      </div>
+      <div class="form-row" style="flex:0 0 auto;">
+        <label>&nbsp;</label>
+        <button id="rev-go"{% if specter2_is_default %} disabled{% endif %}>Find reviewers</button>
+      </div>
+    </div>
+    <div id="rev-status">Idle. Submitting will lazy-load <code>@xenova/transformers</code> + the SPECTER2 ONNX (~30 MB, browser-cached after first run).</div>
+    <div class="progress" id="rev-progress"><div></div></div>
+  </div>
+
+  <div class="panel" id="rev-results-panel" style="display:none;">
+    <h2>Top reviewers <span class="sub" id="rev-result-count"></span></h2>
+    <div class="sub">
+      Score is cosine of query × author centroid (range −1…1; transportation papers usually 0.5–0.9 to a good match).
+      Click an author's name to open their atlas profile (coauthor network, focused).
+    </div>
+    <div style="overflow:auto;">
+      <table class="results" id="rev-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Author</th>
+            <th class="num">Score</th>
+            <th class="num">Papers</th>
+            <th class="num">Last</th>
+            <th>COI</th>
+            <th>Concepts</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+const CACHE_BUST = "{{ cache_bust }}";
+const SPECTER2_REPO = {{ specter2_repo|tojson }};
+const SPECTER2_IS_DEFAULT = {{ specter2_is_default|tojson }};
+const EMBED_DIM = 768;
+
+const $ = (sel) => document.querySelector(sel);
+const setStatus = (msg, kind = "") => {
+  const el = $("#rev-status");
+  el.textContent = msg;
+  el.className = kind;
+};
+const setProgress = (frac) => {
+  const wrap = $("#rev-progress");
+  if (frac == null) { wrap.classList.remove("show"); return; }
+  wrap.classList.add("show");
+  wrap.firstElementChild.style.width = `${Math.max(0, Math.min(1, frac)) * 100}%`;
+};
+
+// ── Presets ───────────────────────────────────────────────────────────────
+const PRESETS = {
+  cav: {
+    title: "Multi-modal perception for cooperative connected and automated vehicles at urban intersections",
+    abstract: "We propose a transformer-based fusion architecture that combines roadside LiDAR, camera, and V2X messages for object detection and intent prediction in dense urban intersections. Evaluation on a CARLA-based benchmark shows a 12% mAP improvement over single-vehicle perception under heavy occlusion."
+  },
+  flow: {
+    title: "Macroscopic traffic flow estimation on freeways under non-recurrent congestion",
+    abstract: "We extend the LWR fundamental-diagram framework to handle incident-induced shockwaves observed in PeMS loop-detector data. A Bayesian filter fuses sparse probe vehicle trajectories with detector counts to estimate density along the I-5 corridor in real time."
+  },
+  ev: {
+    title: "Electric vehicle charging demand and station siting under stochastic adoption",
+    abstract: "Using a discrete-choice model fitted to revealed-preference data from 8,000 EV owners, we forecast charging-session demand at the census-tract level and solve a robust facility-location problem to siting fast chargers under demand uncertainty."
+  },
+  logit: {
+    title: "A nested logit model of mode choice with latent attitudinal classes",
+    abstract: "We jointly estimate a nested logit utility specification and a latent-class measurement model from the 2022 California Household Travel Survey. Identification leverages structural equations linking environmental concern and tech-affinity indicators to mode-specific tastes."
+  },
+};
+document.querySelectorAll(".preset-btn").forEach((b) => {
+  b.addEventListener("click", () => {
+    const p = PRESETS[b.dataset.preset];
+    if (!p) return;
+    $("#rev-title").value = p.title;
+    $("#rev-abstract").value = p.abstract;
+  });
+});
+
+// ── State (lazy) ──────────────────────────────────────────────────────────
+let INDEX = null;        // parsed reviewer_index.json
+let AUTH_INT8 = null;    // Int8Array of length n_authors * EMBED_DIM
+let SCALES = null;       // Float32Array of length n_authors
+let extractor = null;    // transformers.js feature-extraction pipeline
+
+async function loadIndex() {
+  if (INDEX) return;
+  setStatus("Loading reviewer index (~10–25 MB) ...");
+  const [jResp, bResp] = await Promise.all([
+    fetch(`data/reviewer_index.json?v=${CACHE_BUST}`),
+    fetch(`data/reviewer_authors.bin?v=${CACHE_BUST}`),
+  ]);
+  if (!jResp.ok) throw new Error(`reviewer_index.json: HTTP ${jResp.status}`);
+  if (!bResp.ok) throw new Error(`reviewer_authors.bin: HTTP ${bResp.status}`);
+  INDEX = await jResp.json();
+  const buf = await bResp.arrayBuffer();
+  AUTH_INT8 = new Int8Array(buf);
+  SCALES = new Float32Array(INDEX.scales);
+  if (INDEX.dim !== EMBED_DIM) {
+    throw new Error(`Index dim ${INDEX.dim} != expected ${EMBED_DIM}`);
+  }
+  if (AUTH_INT8.length !== INDEX.n_authors * INDEX.dim) {
+    throw new Error(`bin size ${AUTH_INT8.length} != ${INDEX.n_authors} × ${INDEX.dim}`);
+  }
+  setStatus(`Loaded ${INDEX.n_authors.toLocaleString()} authors, ${INDEX.n_concepts.toLocaleString()} concepts.`);
+}
+
+async function loadModel() {
+  if (extractor) return;
+  if (SPECTER2_IS_DEFAULT) throw new Error("SPECTER2 repo not configured (see banner above).");
+  setStatus("Importing transformers.js ...");
+  const tjs = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+  tjs.env.allowLocalModels = false;
+  tjs.env.allowRemoteModels = true;
+  setStatus(`Loading SPECTER2 from ${SPECTER2_REPO} (first run downloads ~30 MB int8 ONNX, then cached) ...`);
+  setProgress(0);
+  extractor = await tjs.pipeline("feature-extraction", SPECTER2_REPO, {
+    quantized: true,
+    progress_callback: (p) => {
+      if (p.status === "progress" && typeof p.progress === "number") setProgress(p.progress / 100);
+      if (p.status === "ready" || p.status === "done") setProgress(null);
+    },
+  });
+  setProgress(null);
+  setStatus("Model ready.");
+}
+
+// ── COI BFS ───────────────────────────────────────────────────────────────
+function findSubmitterIdx(text) {
+  if (!text) return null;
+  const t = text.trim();
+  if (!t) return null;
+  // ORCID-shaped?
+  const orcidMatch = t.match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dxX])/);
+  if (orcidMatch) {
+    const o = orcidMatch[1].toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(INDEX.orcid_to_idx, o)) {
+      return INDEX.orcid_to_idx[o];
+    }
+  }
+  // name lookup (lower)
+  const lc = t.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(INDEX.name_to_idxs, lc)) {
+    const arr = INDEX.name_to_idxs[lc];
+    if (arr.length) return arr[0];   // ambiguous names — pick the first; rare
+  }
+  // try "last, first" reordering if user typed "first last"
+  const flipped = lc.includes(",") ? lc : (() => {
+    const parts = lc.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return null;
+    return `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(" ")}`;
+  })();
+  if (flipped && Object.prototype.hasOwnProperty.call(INDEX.name_to_idxs, flipped)) {
+    return INDEX.name_to_idxs[flipped][0];
+  }
+  return null;
+}
+
+function coiDistances(srcIdx, maxHops) {
+  // Returns Map<idx, hops>. BFS on coi_adj. Caps at maxHops.
+  const dist = new Map();
+  if (srcIdx == null || maxHops < 1) return dist;
+  const adj = INDEX.coi_adj;
+  let frontier = [srcIdx];
+  dist.set(srcIdx, 0);
+  for (let h = 1; h <= maxHops; h++) {
+    const next = [];
+    for (const u of frontier) {
+      for (const v of adj[u] || []) {
+        if (!dist.has(v)) { dist.set(v, h); next.push(v); }
+      }
+    }
+    frontier = next;
+    if (!frontier.length) break;
+  }
+  return dist;
+}
+
+// ── Scoring ───────────────────────────────────────────────────────────────
+function cosineQueryVsAll(queryVec) {
+  // queryVec: Float32Array(EMBED_DIM), L2-normalized.
+  // For each author: dot(queryVec, dequant(int8_row)) where dequant_d = scale_a/127 * int8_d.
+  // Pull the scale outside: dot = (scale_a/127) * sum_d(q[d] * int8_d).
+  const N = INDEX.n_authors;
+  const D = EMBED_DIM;
+  const scores = new Float32Array(N);
+  let off = 0;
+  for (let a = 0; a < N; a++) {
+    let acc = 0;
+    for (let d = 0; d < D; d++) acc += queryVec[d] * AUTH_INT8[off + d];
+    scores[a] = (SCALES[a] / 127) * acc;
+    off += D;
+  }
+  return scores;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function venueLabel(slug) {
+  return slug ? slug.replace(/^tr-/, "TR-").replace(/^t-(\w+)/, (_, x) => "T-" + x.toUpperCase()) : "";
+}
+
+function renderResults(ranked, distMap, title) {
+  const tbody = $("#rev-table tbody");
+  tbody.innerHTML = "";
+  const concepts = INDEX.vocab_concepts;
+  for (let r = 0; r < ranked.length; r++) {
+    const { idx, score } = ranked[r];
+    const a = INDEX.authors[idx];
+    const tr = document.createElement("tr");
+    const cosLabel = (score >= 0 ? "+" : "") + score.toFixed(3);
+    const conceptStr = (a.ci || []).slice(0, 6).map((c) => concepts[c]).filter(Boolean).join(" · ");
+    const orcidLink = a.o ? `<a href="https://orcid.org/${a.o}" target="_blank" rel="noopener" title="ORCID">⓪</a>` : "";
+    const profileHref = `coauthor_network.html?focus=${a.i}`;
+    const venueChips = (a.v || []).slice(0, 3).map(venueLabel).join(" · ");
+    const d = distMap.get(idx);
+    let coiHtml;
+    if (d === undefined) coiHtml = '<span class="coi-x">—</span>';
+    else if (d === 0) coiHtml = '<span class="coi-1">self</span>';
+    else if (d === 1) coiHtml = '<span class="coi-1">d=1</span>';
+    else if (d === 2) coiHtml = '<span class="coi-2">d=2</span>';
+    else coiHtml = `<span class="coi-3">d=${d}</span>`;
+    tr.innerHTML = `
+      <td class="num">${r + 1}</td>
+      <td>
+        <div class="name"><a href="${profileHref}">${a.n}</a> ${orcidLink}</div>
+        <div class="muted" style="font-size:11.5px;">${venueChips}</div>
+      </td>
+      <td class="num">${cosLabel}</td>
+      <td class="num">${a.p}</td>
+      <td class="num">${a.y ?? ""}</td>
+      <td>${coiHtml}</td>
+      <td class="concepts">${conceptStr}</td>`;
+    tbody.appendChild(tr);
+  }
+  $("#rev-result-count").textContent = `(${ranked.length} of ${INDEX.n_authors.toLocaleString()}; query: "${title.slice(0, 80)}${title.length > 80 ? "…" : ""}")`;
+  $("#rev-results-panel").style.display = "block";
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────
+$("#rev-go").addEventListener("click", async () => {
+  const title = $("#rev-title").value.trim();
+  const abstract = $("#rev-abstract").value.trim();
+  if (!title && !abstract) { setStatus("Enter a title and/or abstract.", "err"); return; }
+  const submitter = $("#rev-submitter").value.trim();
+  const topN = parseInt($("#rev-topn").value, 10) || 30;
+  const coiMaxHops = parseInt($("#rev-coi-hops").value, 10) || 0;
+
+  $("#rev-go").disabled = true;
+  try {
+    await loadIndex();
+    await loadModel();
+
+    setStatus("Embedding query ...");
+    const text = abstract ? `${title}[SEP]${abstract}` : title;
+    // SPECTER2: [CLS] pooling, no normalize (we'll L2 norm manually).
+    const out = await extractor(text, { pooling: "cls", normalize: false });
+    const raw = out.data;   // Float32Array length 768
+    if (raw.length !== EMBED_DIM) throw new Error(`query dim ${raw.length} != ${EMBED_DIM}`);
+    // L2 normalize
+    const queryVec = new Float32Array(EMBED_DIM);
+    let nrm = 0;
+    for (let d = 0; d < EMBED_DIM; d++) nrm += raw[d] * raw[d];
+    nrm = Math.sqrt(nrm) || 1;
+    for (let d = 0; d < EMBED_DIM; d++) queryVec[d] = raw[d] / nrm;
+
+    setStatus(`Scoring ${INDEX.n_authors.toLocaleString()} authors ...`);
+    const scores = cosineQueryVsAll(queryVec);
+
+    // COI distances (don't filter the scores array yet — we want to *show* COI=∅ entries too,
+    // just exclude those within maxHops from the final ranking).
+    const submitterIdx = findSubmitterIdx(submitter);
+    const distMap = coiDistances(submitterIdx, Math.max(coiMaxHops, 3));   // BFS to 3 so we can show d=3 too
+    const exclude = new Set();
+    if (submitterIdx != null && coiMaxHops > 0) {
+      for (const [idx, d] of distMap) if (d <= coiMaxHops) exclude.add(idx);
+    }
+
+    // Take top (topN + |exclude|) candidates by score, then trim.
+    const cand = topN + exclude.size + 5;
+    const idxs = Array.from(scores.keys());
+    // partial sort: argpartition top-K by score desc
+    idxs.sort((a, b) => scores[b] - scores[a]);
+    const ranked = [];
+    for (const idx of idxs) {
+      if (exclude.has(idx)) continue;
+      ranked.push({ idx, score: scores[idx] });
+      if (ranked.length >= topN) break;
+    }
+    renderResults(ranked, distMap, title || abstract);
+    if (submitterIdx != null) {
+      setStatus(`Done. Submitter matched: ${INDEX.authors[submitterIdx].n}. Excluded ${exclude.size} authors within ${coiMaxHops} hop(s).`, "ok");
+    } else if (submitter) {
+      setStatus(`Done. Submitter "${submitter}" not found in atlas — no COI filter applied.`, "ok");
+    } else {
+      setStatus("Done.", "ok");
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus(`Error: ${err.message}`, "err");
+  } finally {
+    $("#rev-go").disabled = false;
+  }
+});
+</script>
+{% endblock %}
