@@ -207,9 +207,9 @@ def main() -> int:
     ax.plot(cutoffs, [f * 100 for f in giant_frac],
             marker="o", color=OKABE_ITO[2])
     ax.axhline(58, color=OKABE_ITO[5], linestyle=":", linewidth=1,
-               label="Sun \\& Rahwan (2017): 58\\%")
+               label="Sun & Rahwan (2017): 58%")
     ax.set_xlabel("Cutoff year (edges with first collaboration ≤ $y$)")
-    ax.set_ylabel("Largest-component fraction (\\%)")
+    ax.set_ylabel("Largest-component fraction (%)")
     ax.legend(frameon=False, loc="lower right", fontsize=8)
     ax.grid(alpha=0.25)
     ax.set_ylim(0, 100)

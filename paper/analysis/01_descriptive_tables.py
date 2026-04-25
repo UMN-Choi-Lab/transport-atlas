@@ -418,7 +418,7 @@ def fig_team_size_over_time(papers: pd.DataFrame,
     ax.grid(alpha=0.2)
     # Sun & Rahwan window annotation at the top of the plot
     ax.axvspan(1990, 2015, alpha=0.08, color="#56B4E9")
-    ax.text(2002.5, 0.98, "S\\&R 2017 window",
+    ax.text(2002.5, 0.98, "Sun & Rahwan window",
             ha="center", va="top", color="#56B4E9", fontsize=6, alpha=0.9,
             transform=ax.get_xaxis_transform())
     fig.tight_layout()
