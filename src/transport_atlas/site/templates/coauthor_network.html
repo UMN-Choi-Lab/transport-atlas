@@ -896,7 +896,7 @@ function updateSelectedPanel(n) {
     for (const s of shown) {
       const dStr = (s.d != null) ? `${s.d} hop${s.d === 1 ? '' : 's'}` : '≥4 / disconnected';
       const phantom = s.phantom
-        ? ' <span title="Semantic match but ≥3 hops away in the coauthor graph — likely collaborator who has not yet coauthored" style="color:#fbbf24;">⚡</span>'
+        ? ' <span title="Semantic match — has not directly coauthored with this author" style="color:#fbbf24;">⚡</span>'
         : '';
       html += `<div class="sim-item" data-sid="${s.id}" `
             + `title="coauthor distance: ${dStr}" `

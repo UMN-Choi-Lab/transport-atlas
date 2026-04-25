@@ -199,8 +199,8 @@
   </div>
   <div style="color:#9ca3af;">
     Nearby points work on similar topics. <span style="color:#fbbf24;">⚡</span>
-    marks <b>phantom collaborators</b>: top semantic neighbors that sit ≥3 hops away in
-    the coauthor graph — people researching the same thing who've never coauthored.
+    marks <b>phantom collaborators</b>: top semantic neighbors who have <em>not</em>
+    directly coauthored with this author — same research turf, no shared paper yet.
   </div>
   <div style="color:#6b7280;margin-top:2px;">
     Drag to pan · wheel to zoom · click a point · yellow polyline = topic drift across 5-year bins ·
@@ -705,7 +705,7 @@ function renderSelectedPanel() {
     for (const s of sims) {
       const dStr = s.d != null ? `${s.d} hop${s.d === 1 ? '' : 's'}` : '≥4 / disconnected';
       const phantom = s.phantom
-        ? ' <span title="Semantic match ≥3 hops away in coauthor graph — never co-authored" style="color:#fbbf24;">⚡</span>'
+        ? ' <span title="Semantic match — has not directly coauthored with this author" style="color:#fbbf24;">⚡</span>'
         : '';
       html += `<div class="sim-item" data-id="${s.id}" title="coauthor distance: ${dStr}">`
         + `<span class="name">${escHtml(s.name)}${phantom}</span>`

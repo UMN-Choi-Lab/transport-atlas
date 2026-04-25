@@ -42,7 +42,8 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 SEM_KNN_K = 20              # kNN graph used for semantic Leiden
 SEM_LEIDEN_RESOLUTION = 1.0
 SEM_LEIDEN_SEED = 42
-PHANTOM_MIN_HOPS = 3        # semantic neighbor is a "phantom" if coauthor_dist >= this
+PHANTOM_MIN_HOPS = 2        # semantic neighbor is a "phantom" if coauthor_dist >= this
+                            # (i.e., never directly coauthored — d=1 is the only non-phantom)
 BFS_CUTOFF = 3              # BFS max hops when labeling coauthor_dist
 
 
@@ -343,7 +344,7 @@ def main() -> int:
             if other_nid is None:
                 continue
             d = coauthor_dist(nid, other_nid)
-            # "phantom": never met — require d is None (unknown/>=4) or d >= PHANTOM_MIN_HOPS
+            # "phantom": never directly coauthored — d is None (disconnected/>=4) or d >= PHANTOM_MIN_HOPS (=2)
             is_phantom = (d is None) or (d >= PHANTOM_MIN_HOPS)
             entries.append({
                 "id": other_nid,

@@ -16,6 +16,7 @@
 #
 # Site build:
 #   ./docker/run_embed.sh annotate             # scripts/03b_annotate_all_coauthors.py
+#   ./docker/run_embed.sh reflag-phantoms      # scripts/06b_reflag_phantoms.py
 #   ./docker/run_embed.sh render               # scripts/04_render.py
 #
 # Misc:
@@ -96,6 +97,10 @@ case "$CMD" in
     exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python scripts/03b_annotate_all_coauthors.py "$@"
     ;;
+  reflag-phantoms)
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/06b_reflag_phantoms.py "$@"
+    ;;
   render)
     exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python scripts/04_render.py "$@"
@@ -112,7 +117,7 @@ case "$CMD" in
     exec docker run -it "${COMMON_ARGS[@]}" "$IMAGE" bash
     ;;
   *)
-    echo "usage: $0 {embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|annotate|render|analysis|shell}" >&2
+    echo "usage: $0 {embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|annotate|reflag-phantoms|render|analysis|shell}" >&2
     exit 2
     ;;
 esac
