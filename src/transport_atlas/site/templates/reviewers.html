@@ -45,6 +45,7 @@
   table.results .coi-2 { color: #d97706; }
   table.results .coi-3 { color: #65a30d; }
   table.results .coi-x { color: var(--muted); }
+  table.results .venue-hit { color: #047857; font-weight: 700; background: #ecfdf5; padding: 0 4px; border-radius: 3px; }
   .preset-btn {
     background: #f1f5f9; border: 1px solid var(--border); border-radius: 999px;
     padding: 3px 10px; font-size: 11.5px; color: #334155; cursor: pointer; margin-right: 6px;
@@ -97,7 +98,16 @@
         <label for="rev-submitter">Submitter (optional, for COI) — ORCID or "Last, First"</label>
         <input id="rev-submitter" type="text" placeholder="0000-0001-7140-537X  or  choi, seongjin">
       </div>
-      <div class="form-row" style="flex:0 1 110px;">
+      <div class="form-row" style="flex:1 1 180px;">
+        <label for="rev-venue">Target venue (optional, boosts +0.05)</label>
+        <select id="rev-venue">
+          <option value="">(any)</option>
+          {% for v in venues %}
+          <option value="{{ v.slug }}">{{ v.short }} — {{ v.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row" style="flex:0 1 90px;">
         <label for="rev-topn">Top N</label>
         <select id="rev-topn">
           <option>15</option><option selected>30</option><option>50</option><option>100</option>
@@ -315,7 +325,7 @@ function venueLabel(slug) {
   return slug ? slug.replace(/^tr-/, "TR-").replace(/^t-(\w+)/, (_, x) => "T-" + x.toUpperCase()) : "";
 }
 
-function renderResults(ranked, distMap, title) {
+function renderResults(ranked, distMap, title, targetVenue) {
   const tbody = $("#rev-table tbody");
   tbody.innerHTML = "";
   const concepts = INDEX.vocab_concepts;
@@ -327,7 +337,12 @@ function renderResults(ranked, distMap, title) {
     const conceptStr = (a.ci || []).slice(0, 6).map((c) => concepts[c]).filter(Boolean).join(" · ");
     const orcidLink = a.o ? `<a href="https://orcid.org/${a.o}" target="_blank" rel="noopener" title="ORCID">⓪</a>` : "";
     const profileHref = `coauthor_network.html?focus=${a.i}`;
-    const venueChips = (a.v || []).slice(0, 3).map(venueLabel).join(" · ");
+    const venueChips = (a.v || []).slice(0, 3).map((slug) => {
+      const lab = venueLabel(slug);
+      return targetVenue && slug === targetVenue
+        ? `<span class="venue-hit" title="publishes in target venue">✓ ${lab}</span>`
+        : lab;
+    }).join(" · ");
     const d = distMap.get(idx);
     let coiHtml;
     if (d === undefined) coiHtml = '<span class="coi-x">—</span>';
@@ -360,6 +375,8 @@ $("#rev-go").addEventListener("click", async () => {
   const submitter = $("#rev-submitter").value.trim();
   const topN = parseInt($("#rev-topn").value, 10) || 30;
   const coiMaxHops = parseInt($("#rev-coi-hops").value, 10) || 0;
+  const targetVenue = $("#rev-venue").value || "";
+  const VENUE_BOOST = 0.05;
 
   $("#rev-go").disabled = true;
   try {
@@ -381,6 +398,20 @@ $("#rev-go").addEventListener("click", async () => {
 
     setStatus(`Scoring ${INDEX.n_authors.toLocaleString()} authors ...`);
     const scores = cosineQueryVsAll(queryVec);
+    if (targetVenue) {
+      // Soft boost: lift any author whose top venues include the target.
+      // Boost is small enough that a strong off-venue match (e.g. cosine 0.65) still
+      // outranks a weak on-venue match (cosine 0.40 + 0.05).
+      let nBoosted = 0;
+      for (let a = 0; a < INDEX.n_authors; a++) {
+        const v = INDEX.authors[a].v;
+        if (v && v.indexOf(targetVenue) !== -1) {
+          scores[a] += VENUE_BOOST;
+          nBoosted++;
+        }
+      }
+      console.log(`[rev] venue boost: ${nBoosted} authors boosted by +${VENUE_BOOST} (target ${targetVenue})`);
+    }
 
     // COI distances (don't filter the scores array yet — we want to *show* COI=∅ entries too,
     // just exclude those within maxHops from the final ranking).
@@ -402,7 +433,7 @@ $("#rev-go").addEventListener("click", async () => {
       ranked.push({ idx, score: scores[idx] });
       if (ranked.length >= topN) break;
     }
-    renderResults(ranked, distMap, title || abstract);
+    renderResults(ranked, distMap, title || abstract, targetVenue);
     if (submitterIdx != null) {
       setStatus(`Done. Submitter matched: ${INDEX.authors[submitterIdx].n}. Excluded ${exclude.size} authors within ${coiMaxHops} hop(s).`, "ok");
     } else if (submitter) {
