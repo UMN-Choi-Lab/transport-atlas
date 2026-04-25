@@ -94,9 +94,9 @@
       <textarea id="rev-abstract" placeholder="Forecasting the joint trajectories of human-driven and autonomous vehicles at unsignalized intersections..."></textarea>
     </div>
     <div class="form-inline">
-      <div class="form-row" style="flex:2 1 280px;">
-        <label for="rev-submitter">Submitter (optional, for COI) — ORCID or "Last, First"</label>
-        <input id="rev-submitter" type="text" placeholder="0000-0001-7140-537X  or  choi, seongjin">
+      <div class="form-row" style="flex:2 1 320px;">
+        <label for="rev-submitter">Paper authors (optional, for COI) — ORCID or "Last, First", one per line</label>
+        <textarea id="rev-submitter" rows="3" style="min-height:64px;" placeholder="0000-0001-7140-537X&#10;Choi, Seongjin&#10;Mahmassani, Hani"></textarea>
       </div>
       <div class="form-row" style="flex:1 1 180px;">
         <label for="rev-venue">Target venue (optional, boosts +0.05)</label>
@@ -252,11 +252,10 @@ async function loadModel() {
 }
 
 // ── COI BFS ───────────────────────────────────────────────────────────────
-function findSubmitterIdx(text) {
-  if (!text) return null;
-  const t = text.trim();
+function findOneAuthorIdx(rawToken) {
+  // Returns the atlas array index for a single name/ORCID token, or null.
+  const t = (rawToken || "").trim();
   if (!t) return null;
-  // ORCID-shaped?
   const orcidMatch = t.match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dxX])/);
   if (orcidMatch) {
     const o = orcidMatch[1].toUpperCase();
@@ -264,14 +263,13 @@ function findSubmitterIdx(text) {
       return INDEX.orcid_to_idx[o];
     }
   }
-  // name lookup (lower)
   const lc = t.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(INDEX.name_to_idxs, lc)) {
     const arr = INDEX.name_to_idxs[lc];
-    if (arr.length) return arr[0];   // ambiguous names — pick the first; rare
+    if (arr.length) return arr[0];   // ambiguous names — pick the first
   }
-  // try "last, first" reordering if user typed "first last"
-  const flipped = lc.includes(",") ? lc : (() => {
+  // "first last" → "last, first"
+  const flipped = lc.includes(",") ? null : (() => {
     const parts = lc.split(/\s+/).filter(Boolean);
     if (parts.length < 2) return null;
     return `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(" ")}`;
@@ -282,13 +280,43 @@ function findSubmitterIdx(text) {
   return null;
 }
 
-function coiDistances(srcIdx, maxHops) {
-  // Returns Map<idx, hops>. BFS on coi_adj. Caps at maxHops.
+function parseAuthorList(text) {
+  // Split on newlines first (one author per line is the documented format),
+  // then on semicolons (handles pasted "A; B; C" lists). DON'T split on commas —
+  // names are written "Last, First".
+  if (!text) return [];
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    for (const tok of line.split(/;/)) {
+      const s = tok.trim();
+      if (s) out.push(s);
+    }
+  }
+  return out;
+}
+
+function findAuthorIdxs(tokens) {
+  // Returns { matched: number[], unmatched: string[] } — matched is deduped.
+  const matched = new Set();
+  const unmatched = [];
+  for (const t of tokens) {
+    const idx = findOneAuthorIdx(t);
+    if (idx == null) unmatched.push(t);
+    else matched.add(idx);
+  }
+  return { matched: Array.from(matched), unmatched };
+}
+
+function coiDistances(srcIdxs, maxHops) {
+  // Multi-source BFS on coi_adj. Returns Map<idx, hops>. Each seed sits at hop 0.
+  // Caps the frontier expansion at maxHops.
   const dist = new Map();
-  if (srcIdx == null || maxHops < 1) return dist;
+  if (!srcIdxs || !srcIdxs.length || maxHops < 1) return dist;
   const adj = INDEX.coi_adj;
-  let frontier = [srcIdx];
-  dist.set(srcIdx, 0);
+  let frontier = [];
+  for (const s of srcIdxs) {
+    if (s != null && !dist.has(s)) { dist.set(s, 0); frontier.push(s); }
+  }
   for (let h = 1; h <= maxHops; h++) {
     const next = [];
     for (const u of frontier) {
@@ -413,12 +441,14 @@ $("#rev-go").addEventListener("click", async () => {
       console.log(`[rev] venue boost: ${nBoosted} authors boosted by +${VENUE_BOOST} (target ${targetVenue})`);
     }
 
-    // COI distances (don't filter the scores array yet — we want to *show* COI=∅ entries too,
-    // just exclude those within maxHops from the final ranking).
-    const submitterIdx = findSubmitterIdx(submitter);
-    const distMap = coiDistances(submitterIdx, Math.max(coiMaxHops, 3));   // BFS to 3 so we can show d=3 too
+    // COI distances. Parse the (multi-line) author field, look each one up,
+    // multi-source BFS from every matched author. Don't filter scores yet —
+    // we *show* d > maxHops entries (greyed) and only exclude d <= maxHops.
+    const authorTokens = parseAuthorList(submitter);
+    const { matched: authorIdxs, unmatched: authorMisses } = findAuthorIdxs(authorTokens);
+    const distMap = coiDistances(authorIdxs, Math.max(coiMaxHops, 3));   // BFS to 3 so we can label d=3
     const exclude = new Set();
-    if (submitterIdx != null && coiMaxHops > 0) {
+    if (authorIdxs.length && coiMaxHops > 0) {
       for (const [idx, d] of distMap) if (d <= coiMaxHops) exclude.add(idx);
     }
 
@@ -434,12 +464,18 @@ $("#rev-go").addEventListener("click", async () => {
       if (ranked.length >= topN) break;
     }
     renderResults(ranked, distMap, title || abstract, targetVenue);
-    if (submitterIdx != null) {
-      setStatus(`Done. Submitter matched: ${INDEX.authors[submitterIdx].n}. Excluded ${exclude.size} authors within ${coiMaxHops} hop(s).`, "ok");
-    } else if (submitter) {
-      setStatus(`Done. Submitter "${submitter}" not found in atlas — no COI filter applied.`, "ok");
+    if (authorIdxs.length) {
+      const matchedNames = authorIdxs.map((i) => INDEX.authors[i].n);
+      const head = `Done. Matched ${authorIdxs.length}/${authorTokens.length} author(s): ${matchedNames.slice(0, 4).join("; ")}${matchedNames.length > 4 ? " …" : ""}.`;
+      const tail = ` Excluded ${exclude.size} reviewers within ${coiMaxHops} hop(s).`;
+      const miss = authorMisses.length
+        ? ` Not found in atlas: ${authorMisses.slice(0, 3).join("; ")}${authorMisses.length > 3 ? " …" : ""} — their COI not applied.`
+        : "";
+      setStatus(head + tail + miss, authorMisses.length ? "" : "ok");
+    } else if (authorTokens.length) {
+      setStatus(`Done. None of ${authorTokens.length} author(s) matched the atlas — no COI filter applied. Tried: ${authorTokens.slice(0, 3).join("; ")}${authorTokens.length > 3 ? " …" : ""}`, "err");
     } else {
-      setStatus("Done.", "ok");
+      setStatus("Done. (No authors entered → no COI filter.)", "ok");
     }
   } catch (err) {
     console.error(err);
