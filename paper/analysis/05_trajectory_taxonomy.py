@@ -53,10 +53,10 @@ TAU_EFF_DRIFT = 0.60
 # Restrict to authors with ≥ MIN_BINS five-year bins. With only 2 bins
 # η is forced to 1 (single segment, path = net), so 2-bin trajectories
 # can never register a non-monotone shape and would inflate the stayer
-# and drifter classes with degenerate cases. ≥4 bins corresponds to a
-# ≥20-year active publication window in the corpus and matches the
-# median bin count of returners and switchers.
-MIN_BINS = 4
+# and drifter classes with degenerate cases. ≥3 bins is the minimum for
+# the path to bend at all: it allows two segments so η can deviate
+# from 1, and corresponds to a ≥10-year active publication window.
+MIN_BINS = 3
 # Inside the low-η group, distinguish *round-trip* (path closes back on
 # itself, small net displacement) from *re-oriented* (one or two big
 # turns but net displacement is large — e.g., mid-career topic switch).
