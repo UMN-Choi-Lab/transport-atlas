@@ -54,6 +54,10 @@ TOP_K = 20
 EVAL_KS = (5, 10, 20)
 PHANTOM_MIN_HOPS = 3
 BFS_CUTOFF = 3
+# When the script is run from CLI with --phantom-min-hops != default, output
+# is suffixed (e.g., phantom_eval_k2.json) so the headline file is preserved
+# for the paper's main figures/tables. Set non-empty by the __main__ block.
+OUT_SUFFIX = ""
 WHITEN_TOP_PC = 1
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -597,14 +601,33 @@ def main() -> int:  # noqa: C901
     }
     out_dir = repo / "data" / "processed"
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "phantom_eval.json").write_text(
+    out_name = f"phantom_eval{OUT_SUFFIX}.json"
+    paper_name = f"_phantom_eval{OUT_SUFFIX}.json"
+    (out_dir / out_name).write_text(
         json.dumps(out, indent=2, allow_nan=False))
-    (repo / "paper" / "analysis" / "_phantom_eval.json").write_text(
+    (repo / "paper" / "analysis" / paper_name).write_text(
         json.dumps(out, indent=2, allow_nan=False))
-    print(f"[phantom] wrote data/processed/phantom_eval.json  "
-          f"and paper/analysis/_phantom_eval.json", flush=True)
+    print(f"[phantom] wrote data/processed/{out_name}  "
+          f"and paper/analysis/{paper_name}", flush=True)
     return 0
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--phantom-min-hops", type=int, default=PHANTOM_MIN_HOPS,
+        help=f"Phantom = top-K semantic neighbor with train_dist >= K. "
+             f"Default {PHANTOM_MIN_HOPS} (matches headline numbers). "
+             f"Pass 2 for the website's looser definition.")
+    parser.add_argument(
+        "--out-suffix", type=str, default=None,
+        help="Suffix for output JSON (e.g., '_k2'). Auto-derived from "
+             "--phantom-min-hops when not given and value differs from default.")
+    args = parser.parse_args()
+    PHANTOM_MIN_HOPS = args.phantom_min_hops
+    if args.out_suffix is not None:
+        OUT_SUFFIX = args.out_suffix
+    elif args.phantom_min_hops != 3:
+        OUT_SUFFIX = f"_k{args.phantom_min_hops}"
     sys.exit(main())
