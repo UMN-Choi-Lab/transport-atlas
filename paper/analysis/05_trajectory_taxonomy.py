@@ -47,9 +47,16 @@ TRAJ_PATH = ROOT / "data" / "processed" / "author_trajectories.json"
 NET_PATH = ROOT / "data" / "processed" / "coauthor_network.json"
 
 # UMAP coords are scaled to [-100, 100]. Pick thresholds so they partition
-# the ~10k trajectory set into non-degenerate classes.
+# the trajectory set into non-degenerate classes.
 TAU_STAY = 15.0
 TAU_EFF_DRIFT = 0.60
+# Restrict to authors with ≥ MIN_BINS five-year bins. With only 2 bins
+# η is forced to 1 (single segment, path = net), so 2-bin trajectories
+# can never register a non-monotone shape and would inflate the stayer
+# and drifter classes with degenerate cases. ≥4 bins corresponds to a
+# ≥20-year active publication window in the corpus and matches the
+# median bin count of returners and switchers.
+MIN_BINS = 4
 # Inside the low-η group, distinguish *round-trip* (path closes back on
 # itself, small net displacement) from *re-oriented* (one or two big
 # turns but net displacement is large — e.g., mid-career topic switch).
@@ -127,8 +134,15 @@ def main() -> int:  # noqa: C901
             "start_year":  int(bins[0]["p"]),
             "end_year":    int(bins[-1]["p"]) + 5,
         })
-    df = pd.DataFrame(rows)
-    print(f"[traj] classified {len(df):,} authors", flush=True)
+    df_all = pd.DataFrame(rows)
+    n_total = len(df_all)
+    df = df_all[df_all["bins"] >= MIN_BINS].copy()
+    n_dropped = n_total - len(df)
+    print(f"[traj] {n_total:,} authors with ≥2 bins; "
+          f"restricted to {len(df):,} with ≥{MIN_BINS} bins "
+          f"(dropped {n_dropped:,} short-trajectory authors).",
+          flush=True)
+    print(f"[traj] classified {len(df):,} shape-rich authors", flush=True)
     CLASS_ORDER = ("stayer", "drifter", "returner", "switcher")
     for cls in CLASS_ORDER:
         n = (df["class"] == cls).sum()
@@ -275,10 +289,12 @@ def main() -> int:  # noqa: C901
     # Summary JSON for prose
     # ------------------------------------------------------------------
     summary = {
-        "n_total":       int(len(df)),
-        "tau_stay":      TAU_STAY,
-        "tau_eff":       TAU_EFF_DRIFT,
-        "tau_net":       TAU_NET,
+        "n_total":           int(n_total),
+        "n_shape_rich":      int(len(df)),
+        "min_bins":          MIN_BINS,
+        "tau_stay":          TAU_STAY,
+        "tau_eff":           TAU_EFF_DRIFT,
+        "tau_net":           TAU_NET,
         "n_stayer":      int((df["class"] == "stayer").sum()),
         "n_drifter":     int((df["class"] == "drifter").sum()),
         "n_returner":    int((df["class"] == "returner").sum()),
