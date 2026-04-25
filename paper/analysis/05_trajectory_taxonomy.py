@@ -47,9 +47,17 @@ TRAJ_PATH = ROOT / "data" / "processed" / "author_trajectories.json"
 NET_PATH = ROOT / "data" / "processed" / "coauthor_network.json"
 
 # UMAP coords are scaled to [-100, 100]. Pick thresholds so they partition
-# the ~10k trajectory set into non-degenerate classes (~40/35/25 split).
+# the ~10k trajectory set into non-degenerate classes.
 TAU_STAY = 15.0
 TAU_EFF_DRIFT = 0.60
+# Inside the low-η group, distinguish *round-trip* (path closes back on
+# itself, small net displacement) from *re-oriented* (one or two big
+# turns but net displacement is large — e.g., mid-career topic switch).
+# Using the same scale as TAU_STAY: a "stayed near home" trajectory and
+# a "settled in a new home" trajectory both have net_disp roughly ≤
+# TAU_STAY around their respective center; anything beyond that is a
+# genuine re-orientation.
+TAU_NET = 15.0
 # Drop bins that start after YEAR_MAX_BIN - the 2025-29 bin is partial (only
 # 2025, since 2026 is excluded), so its centroid is noisy. 2020-24 is the
 # last complete 5-year bin.
@@ -71,12 +79,14 @@ def _tex_escape(s) -> str:
     return s
 
 
-def _classify(total_path: float, efficiency: float) -> str:
+def _classify(total_path: float, efficiency: float, net_disp: float) -> str:
     if total_path < TAU_STAY:
         return "stayer"
     if efficiency >= TAU_EFF_DRIFT:
         return "drifter"
-    return "pivoter"
+    if net_disp < TAU_NET:
+        return "returner"   # round-trip pivoter: path closes back near origin
+    return "switcher"        # re-oriented: low η but ended far from start
 
 
 def main() -> int:  # noqa: C901
@@ -113,15 +123,16 @@ def main() -> int:  # noqa: C901
             "total_path":  total_path,
             "net_disp":    net_disp,
             "efficiency":  eff,
-            "class":       _classify(total_path, eff),
+            "class":       _classify(total_path, eff, net_disp),
             "start_year":  int(bins[0]["p"]),
             "end_year":    int(bins[-1]["p"]) + 5,
         })
     df = pd.DataFrame(rows)
     print(f"[traj] classified {len(df):,} authors", flush=True)
-    for cls in ("stayer", "drifter", "pivoter"):
+    CLASS_ORDER = ("stayer", "drifter", "returner", "switcher")
+    for cls in CLASS_ORDER:
         n = (df["class"] == cls).sum()
-        print(f"       {cls:>8s}: {n:,} ({100*n/len(df):.1f}%)", flush=True)
+        print(f"       {cls:>9s}: {n:,} ({100*n/len(df):.1f}%)", flush=True)
 
     # ------------------------------------------------------------------
     # Table — per-class statistics
@@ -135,7 +146,7 @@ def main() -> int:  # noqa: C901
         median_cites=("citations", "median"),
         median_span=("span_years", "median"),
         median_bins=("bins", "median"),
-    ).reindex(["stayer", "drifter", "pivoter"])
+    ).reindex(list(CLASS_ORDER))
     lines = [
         r"\begin{tabular}{lrrrrrrrr}",
         r"\toprule",
@@ -161,9 +172,12 @@ def main() -> int:  # noqa: C901
     # Diagonal y = x marks efficiency = 1 (straight line).
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(5.2, 5))
-    colors = {"stayer": OKABE_ITO[1], "drifter": OKABE_ITO[2],
-              "pivoter": OKABE_ITO[5]}
-    for cls in ("stayer", "pivoter", "drifter"):
+    colors = {"stayer":   OKABE_ITO[1],
+              "drifter":  OKABE_ITO[2],
+              "returner": OKABE_ITO[5],
+              "switcher": OKABE_ITO[3]}
+    # Plot order: drifters last so they sit on top in dense regions.
+    for cls in ("stayer", "switcher", "returner", "drifter"):
         sub = df[df["class"] == cls]
         ax.scatter(sub["total_path"], sub["net_disp"], s=5, alpha=0.35,
                    color=colors[cls],
@@ -183,96 +197,76 @@ def main() -> int:  # noqa: C901
     print("  ✓ figures/09_trajectory_scatter.pdf")
 
     # ------------------------------------------------------------------
-    # Figure — 6-panel examples (2 per class). We prefer hand-picked
-    # household-name transportation researchers when they exist in the
-    # classified set; otherwise fall back to top-2 by citations among
-    # prolific trajectories in that class.
+    # Figure — 4-panel examples (1 per class). Hand-picked exemplars
+    # whose trajectories cleanly illustrate each class, falling back to
+    # the top-cited author of that class if a named exemplar is missing
+    # or has been reclassified by a future regen.
     # ------------------------------------------------------------------
-    # Household-name transportation researchers to prefer as exemplars,
-    # regardless of which class they end up in. Surname matching is
-    # case-insensitive on the OpenAlex canonical label (surname, first-name
-    # form). Order here is the preference tie-break within each class.
-    PREFERRED = [
-        "geroliminis, nikolas", "mahmassani, hani", "bhat, chandra",
-        "kockelman, kara", "hensher, david", "daganzo, carlos",
-        "abdel-aty, mohamed", "hoogendoorn, serge", "papageorgiou, markos",
-        "axhausen, kay", "ben-akiva, moshe", "ceder, avishai",
-    ]
-    # Label each preferred name with its actual class (or None if missing).
-    preferred_by_class: dict[str, list[pd.Series]] = {
-        "stayer": [], "drifter": [], "pivoter": [],
+    EXEMPLARS = {
+        "stayer":   "bhat, chandra",        # huge career, one topic neighborhood
+        "drifter":  "kockelman, kara",      # efficient one-way trajectory
+        "returner": "mahmassani, hani",     # round-trip via 1990 excursion
+        "switcher": "davis, gary",          # one big mid-career re-orientation
     }
-    for target in PREFERRED:
-        target_l = target.lower()
-        matches = df[df["name"].str.lower().str.startswith(target_l)]
-        if matches.empty:
-            continue
-        row = matches.sort_values("citations", ascending=False).iloc[0]
-        cls = row["class"]
-        if cls in preferred_by_class:
-            preferred_by_class[cls].append(row)
 
-    fig, axes = plt.subplots(2, 3, figsize=(8.5, 5.5))
-    for col_idx, cls in enumerate(("stayer", "drifter", "pivoter")):
-        picks: list[pd.Series] = list(preferred_by_class.get(cls, [])[:2])
-        if len(picks) < 2:
-            cls_df = df[df["class"] == cls]
-            filler = (cls_df.sort_values("n_papers_traj", ascending=False)
-                             .head(20)
-                             .sort_values("citations", ascending=False))
-            for _, row in filler.iterrows():
-                if len(picks) >= 2:
-                    break
-                if all(row["id"] != p["id"] for p in picks):
-                    picks.append(row)
-        sub = pd.DataFrame(picks[:2])
-        for row_idx, (_, r) in enumerate(sub.iterrows()):
-            ax = axes[row_idx, col_idx]
-            bins = [b for b in trajs[str(int(r["id"]))]
-                    if int(b["p"]) <= YEAR_MAX_BIN]
-            xs = [b["x"] for b in bins]
-            ys = [b["y"] for b in bins]
-            ns = [b["n"] for b in bins]
-            ax.plot(xs, ys, color=colors[cls], linewidth=1.4, alpha=0.7)
-            # Marker area scales with sqrt(n) so prolific bins don't swamp
-            # lean ones; capped so adjacent circles don't overlap the arrow.
-            sizes = [min(14 + 4.0 * np.sqrt(n), 55) for n in ns]
-            ax.scatter(xs, ys, s=sizes,
-                       color=colors[cls], edgecolors="black",
-                       linewidths=0.4, alpha=0.7, zorder=3)
-            # Year annotations — place along the path with a small offset
-            # away from the circle; no leader line required.
-            for b in bins:
-                ax.annotate(f"{b['p']}", (b["x"], b["y"]),
-                            fontsize=6.0, alpha=0.9,
-                            textcoords="offset points", xytext=(6, 4))
-            raw_name = str(r["name"] or "")
-            if "," in raw_name:
-                last, rest = raw_name.split(",", 1)
-                pretty = (last.strip().title() + ", " +
-                          " ".join(p.strip().title() for p in rest.split()))
-            else:
-                pretty = raw_name.title()
-            title = f"{pretty}  ({cls})"
-            if len(title) > 42:
-                title = title[:40] + "…"
-            ax.set_title(title, fontsize=8.5)
-            # Autoscale with a 20% padding so the exemplar fills its panel
-            # instead of clustering in the middle of a fixed ±100 window.
-            if xs:
-                x_mid = (max(xs) + min(xs)) / 2
-                y_mid = (max(ys) + min(ys)) / 2
-                span = max(
-                    max(xs) - min(xs),
-                    max(ys) - min(ys),
-                    20.0,
-                )
-                half = span * 0.65
-                ax.set_xlim(x_mid - half, x_mid + half)
-                ax.set_ylim(y_mid - half, y_mid + half)
-            ax.set_aspect("equal")
-            ax.tick_params(labelsize=6)
-            ax.grid(alpha=0.15)
+    def _pick_for(cls: str) -> pd.Series | None:
+        target = EXEMPLARS.get(cls, "")
+        if target:
+            matches = df[(df["class"] == cls)
+                         & df["name"].str.lower().str.startswith(target)]
+            if not matches.empty:
+                return matches.sort_values("citations",
+                                            ascending=False).iloc[0]
+            print(f"[traj] WARNING: exemplar {target!r} not in class {cls!r}; "
+                  f"falling back to top-cited", flush=True)
+        cls_df = df[df["class"] == cls]
+        if cls_df.empty:
+            return None
+        return (cls_df.sort_values("n_papers_traj", ascending=False)
+                       .head(20)
+                       .sort_values("citations", ascending=False)
+                       .iloc[0])
+
+    fig, axes = plt.subplots(1, 4, figsize=(11.0, 3.0))
+    for col_idx, cls in enumerate(CLASS_ORDER):
+        ax = axes[col_idx]
+        r = _pick_for(cls)
+        if r is None:
+            ax.set_axis_off()
+            continue
+        bins = [b for b in trajs[str(int(r["id"]))]
+                if int(b["p"]) <= YEAR_MAX_BIN]
+        xs = [b["x"] for b in bins]
+        ys = [b["y"] for b in bins]
+        ns = [b["n"] for b in bins]
+        ax.plot(xs, ys, color=colors[cls], linewidth=1.4, alpha=0.7)
+        sizes = [min(14 + 4.0 * np.sqrt(n), 55) for n in ns]
+        ax.scatter(xs, ys, s=sizes,
+                   color=colors[cls], edgecolors="black",
+                   linewidths=0.4, alpha=0.7, zorder=3)
+        for b in bins:
+            ax.annotate(f"{b['p']}", (b["x"], b["y"]),
+                        fontsize=6.0, alpha=0.9,
+                        textcoords="offset points", xytext=(6, 4))
+        raw_name = str(r["name"] or "")
+        if "," in raw_name:
+            last, rest = raw_name.split(",", 1)
+            pretty = (last.strip().title() + ", " +
+                      " ".join(p.strip().title() for p in rest.split()))
+        else:
+            pretty = raw_name.title()
+        title = f"{pretty}\n({cls}, $\\eta = {r['efficiency']:.2f}$)"
+        ax.set_title(title, fontsize=8.5)
+        if xs:
+            x_mid = (max(xs) + min(xs)) / 2
+            y_mid = (max(ys) + min(ys)) / 2
+            span = max(max(xs) - min(xs), max(ys) - min(ys), 20.0)
+            half = span * 0.65
+            ax.set_xlim(x_mid - half, x_mid + half)
+            ax.set_ylim(y_mid - half, y_mid + half)
+        ax.set_aspect("equal")
+        ax.tick_params(labelsize=6)
+        ax.grid(alpha=0.15)
     fig.tight_layout()
     _save(fig, "09_trajectory_examples")
     print("  ✓ figures/09_trajectory_examples.pdf")
@@ -284,9 +278,11 @@ def main() -> int:  # noqa: C901
         "n_total":       int(len(df)),
         "tau_stay":      TAU_STAY,
         "tau_eff":       TAU_EFF_DRIFT,
+        "tau_net":       TAU_NET,
         "n_stayer":      int((df["class"] == "stayer").sum()),
         "n_drifter":     int((df["class"] == "drifter").sum()),
-        "n_pivoter":     int((df["class"] == "pivoter").sum()),
+        "n_returner":    int((df["class"] == "returner").sum()),
+        "n_switcher":    int((df["class"] == "switcher").sum()),
         "median_path_overall":   float(df["total_path"].median()),
         "median_net_overall":    float(df["net_disp"].median()),
         "median_eff_overall":    float(df["efficiency"].median()),
@@ -294,8 +290,10 @@ def main() -> int:  # noqa: C901
                                               "papers_all"].median()),
         "median_papers_drifter": float(df.loc[df["class"] == "drifter",
                                               "papers_all"].median()),
-        "median_papers_pivoter": float(df.loc[df["class"] == "pivoter",
-                                              "papers_all"].median()),
+        "median_papers_returner": float(df.loc[df["class"] == "returner",
+                                                "papers_all"].median()),
+        "median_papers_switcher": float(df.loc[df["class"] == "switcher",
+                                                "papers_all"].median()),
     }
     (ROOT / "paper" / "analysis" / "_trajectory_taxonomy.json").write_text(
         json.dumps(summary, indent=2)
