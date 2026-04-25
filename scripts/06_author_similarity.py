@@ -296,12 +296,26 @@ def main() -> int:
     # Build coauthor-graph adjacency from the already-exported network JSON,
     # then BFS up to BFS_CUTOFF hops from each atlas node so we can label each
     # semantic neighbor pair with coauthor_dist ∈ {1, 2, 3, null}.
+    #
+    # IMPORTANT: ``net["edges"]`` only contains pairs with ≥2 shared papers
+    # (BASE_THRESHOLD in coauthor_graph.py). For phantom-distance purposes we
+    # want the *full* coauthor adjacency, so 1-collab pairs aren't pushed to
+    # d≥2 and falsely flagged as never-coauthored. Pull in 1-collab pairs from
+    # the per-node ``ac`` annotation written by 03b_annotate_all_coauthors.py.
     import networkx as nx
     G = nx.Graph()
     for n in net["nodes"]:
         G.add_node(n["id"])
     for e in net["edges"]:
         G.add_edge(e["source"], e["target"])
+    n_edges_thresh = G.number_of_edges()
+    for n in net["nodes"]:
+        nid = n["id"]
+        for cid, _cnt in (n.get("ac") or []):
+            G.add_edge(nid, cid)
+    print(f"[sim] coauthor graph for BFS: thresholded edges={n_edges_thresh:,}, "
+          f"unthresholded (incl. 1-collab from ac)={G.number_of_edges():,}",
+          flush=True)
     print(f"[sim] coauthor graph: {G.number_of_nodes():,} nodes, "
           f"{G.number_of_edges():,} edges — computing BFS distances (cutoff {BFS_CUTOFF})...",
           flush=True)
