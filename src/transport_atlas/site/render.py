@@ -21,6 +21,7 @@ PAGES = [
     ("venues.html", "venues", "venues.html"),
     ("coauthor_network.html", "coauthor", "coauthor_network.html"),
     ("topic_space.html", "topic", "topic_space.html"),
+    ("trajectories.html", "trajectories", "trajectories.html"),
     ("combined.html", "combined", "combined.html"),
 ]
 
@@ -41,6 +42,7 @@ def run() -> dict:
     for name in ["papers.json", "by_year.json", "coauthor_network.json", "top_hubs.json",
                  "author_rankings.json", "venue_stats.json",
                  "topic_coords.json", "author_similar.json", "author_trajectories.json",
+                 "trajectory_taxonomy.json",
                  "semantic_communities.json", "combined_communities.json"]:
         src = processed / name
         if src.exists():

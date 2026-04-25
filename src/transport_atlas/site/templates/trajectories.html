@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block title %}Author Trajectories — Transport Atlas{% endblock %}
+
+{% block content %}
+<style>
+  #traj-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 1100px) { #traj-layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .panel h2 { margin: 0 0 6px; font-size: 15px; }
+  .panel .sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; align-items: center; }
+  .legend label { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 5px; }
+  .legend input { margin: 0; }
+  .swatch { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  #traj-search { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; margin-bottom: 6px; }
+  #author-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .row { padding: 5px 8px; border-bottom: 1px solid #f1f1f1; cursor: pointer; font-size: 12.5px;
+         display: flex; justify-content: space-between; gap: 8px; }
+  .row:hover { background: #f5f7fb; }
+  .row.sel { background: #e6f0ff; }
+  .row .cls-tag { font-size: 10.5px; color: var(--muted); }
+  .row .cls-tag.stayer   { color: #56b4e9; }
+  .row .cls-tag.drifter  { color: #009e73; }
+  .row .cls-tag.returner { color: #cc79a7; }
+  .row .cls-tag.switcher { color: #d55e00; }
+  .ex-star { color: #d4ad00; font-size: 11px; }
+  #author-info { font-size: 13px; line-height: 1.5; }
+  #author-info .metric { display: inline-block; margin-right: 14px; color: var(--muted); }
+  #author-info .metric b { color: var(--fg); }
+  .help { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+
+<h2 style="margin-top:0;font-size:20px;">Author topic trajectories</h2>
+<p class="muted" style="font-size:13px; max-width:900px;">
+  Each researcher's <b>citation-weighted SPECTER2 centroid</b> is computed for every five-year bin of their career,
+  giving a polyline in UMAP space. Two scalars summarise the polyline:
+  <b>total path</b> (sum of segment lengths) and <b>net displacement</b> (start-to-end distance). Their ratio
+  η = net / path is 1 for a straight line and approaches 0 when the path closes back on itself. We classify
+  authors with ≥ 4 bins (≥ 20-year publication window) into four shape classes; click any point or row to see
+  that author's trajectory at right.
+</p>
+
+<div id="traj-layout">
+
+  <div class="panel">
+    <h2>Class scatter <span class="sub" id="scatter-count"></span></h2>
+    <div class="legend" id="legend"></div>
+    <canvas id="scatter" width="800" height="560"
+            style="width:100%;height:auto;display:block;margin-top:8px;cursor:crosshair;"></canvas>
+    <div class="help">
+      x-axis: <b>total path</b> (UMAP units). y-axis: <b>net displacement</b>. Diagonal = η = 1 (straight line).
+      Colored stars mark the four canonical exemplars used in §9 of the paper.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Browse authors</h2>
+    <div class="sub">Filter by class (toggle in legend), search by name.</div>
+    <input id="traj-search" type="search" placeholder="Search by surname (e.g., mahmassani)" autocomplete="off">
+    <div id="author-list"></div>
+
+    <h2 style="margin-top:14px;">Selected author</h2>
+    <div id="author-info" class="sub">Click a point on the scatter, or a row in the list above.</div>
+    <canvas id="author-traj" width="500" height="380"
+            style="width:100%;height:auto;display:block;margin-top:8px;background:#fafafa;
+                   border:1px solid var(--border);border-radius:6px;"></canvas>
+  </div>
+
+</div>
+
+<script>
+const CLASS_COLOR = {
+  stayer:   '#56b4e9',
+  drifter:  '#009e73',
+  returner: '#cc79a7',
+  switcher: '#d55e00',
+};
+const CLASS_LABEL = {
+  stayer:   'Stayer',
+  drifter:  'Drifter',
+  returner: 'Returner (round-trip)',
+  switcher: 'Switcher (re-oriented)',
+};
+const CLASS_ORDER = ['stayer', 'drifter', 'returner', 'switcher'];
+const cacheBust = "{{ cache_bust }}";
+
+const visibleClasses = new Set(CLASS_ORDER);
+let TAXONOMY = null;
+let TRAJ = null;
+let selectedId = null;
+
+function buildLegend() {
+  const el = document.getElementById('legend');
+  el.innerHTML = '';
+  for (const c of CLASS_ORDER) {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `<input type="checkbox" data-cls="${c}" checked>`
+                  + `<span class="swatch" style="background:${CLASS_COLOR[c]};"></span>`
+                  + `${CLASS_LABEL[c]}`;
+    lbl.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) visibleClasses.add(c); else visibleClasses.delete(c);
+      drawScatter();
+      renderAuthorList();
+    });
+    el.appendChild(lbl);
+  }
+}
+
+function drawScatter() {
+  if (!TAXONOMY) return;
+  const canvas = document.getElementById('scatter');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Find data extents
+  const rows = TAXONOMY.authors;
+  const xMax = Math.max(...rows.map(r => r.total_path)) * 1.05;
+  const yMax = Math.max(...rows.map(r => r.net_disp)) * 1.05;
+  const lim = Math.max(xMax, yMax);
+  const padL = 50, padR = 12, padT = 12, padB = 38;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  const X = v => padL + (v / lim) * plotW;
+  const Y = v => H - padB - (v / lim) * plotH;
+
+  // Axes
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.lineTo(W - padR, H - padB);
+  ctx.stroke();
+
+  // Diagonal η = 1
+  ctx.strokeStyle = '#bbb'; ctx.setLineDash([4, 3]); ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(lim), Y(lim)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+  ctx.fillText('η = 1', X(lim) - 35, Y(lim) + 14);
+
+  // Stayer cutoff (path = 15)
+  ctx.strokeStyle = '#aaa'; ctx.setLineDash([2, 4]); ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(X(15), Y(0)); ctx.lineTo(X(15), Y(lim)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillText('path = 15', X(15) + 4, padT + 12);
+
+  // Net cutoff (net = 15)
+  ctx.beginPath(); ctx.moveTo(X(0), Y(15)); ctx.lineTo(X(lim), Y(15)); ctx.stroke();
+  ctx.fillText('net = 15', X(0) + 6, Y(15) - 4);
+
+  // Axis labels + ticks
+  ctx.fillStyle = '#444'; ctx.font = '11px sans-serif';
+  for (const t of [0, 25, 50, 75, 100, 125, 150]) {
+    if (t > lim) break;
+    const x = X(t);
+    ctx.beginPath(); ctx.moveTo(x, H - padB); ctx.lineTo(x, H - padB + 4); ctx.stroke();
+    ctx.fillText(t, x - 8, H - padB + 16);
+    const y = Y(t);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL - 4, y); ctx.stroke();
+    ctx.fillText(t, padL - 32, y + 3);
+  }
+  ctx.fillStyle = '#222'; ctx.font = '12px sans-serif';
+  ctx.fillText('total path (UMAP units)', W / 2 - 60, H - 8);
+  ctx.save(); ctx.translate(13, H / 2 + 60); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('net displacement', 0, 0); ctx.restore();
+
+  // Points
+  for (const r of rows) {
+    if (!visibleClasses.has(r.class)) continue;
+    const x = X(r.total_path), y = Y(r.net_disp);
+    ctx.fillStyle = CLASS_COLOR[r.class];
+    ctx.globalAlpha = (r.id === selectedId) ? 1 : 0.45;
+    ctx.beginPath(); ctx.arc(x, y, r.id === selectedId ? 4 : 2.4, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Exemplars
+  ctx.strokeStyle = '#d4ad00'; ctx.lineWidth = 1.5;
+  for (const r of rows) {
+    if (!r.exemplar) continue;
+    const x = X(r.total_path), y = Y(r.net_disp);
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 4 * Math.PI / 5) - Math.PI / 2;
+      const px = x + Math.cos(a) * 6.5;
+      const py = y + Math.sin(a) * 6.5;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = '#444'; ctx.font = '10.5px sans-serif';
+    const last = String(r.name).split(',')[0];
+    ctx.fillText(last, x + 9, y + 4);
+  }
+}
+
+function renderAuthorList(filter = '') {
+  if (!TAXONOMY) return;
+  const list = document.getElementById('author-list');
+  const q = filter.trim().toLowerCase();
+  const rows = TAXONOMY.authors
+    .filter(r => visibleClasses.has(r.class))
+    .filter(r => !q || String(r.name).toLowerCase().includes(q))
+    .sort((a, b) => b.citations - a.citations)
+    .slice(0, 200);
+  list.innerHTML = '';
+  for (const r of rows) {
+    const div = document.createElement('div');
+    div.className = 'row' + (r.id === selectedId ? ' sel' : '');
+    div.dataset.id = r.id;
+    const star = r.exemplar ? '<span class="ex-star">★</span> ' : '';
+    div.innerHTML = `<span>${star}${r.name}</span>`
+                  + `<span class="cls-tag ${r.class}">${CLASS_LABEL[r.class].split(' ')[0]} · η=${r.eta.toFixed(2)}</span>`;
+    div.addEventListener('click', () => selectAuthor(r.id));
+    list.appendChild(div);
+  }
+  if (rows.length === 0) {
+    list.innerHTML = '<div class="row" style="cursor:default;color:var(--muted);">No matches.</div>';
+  }
+  document.getElementById('scatter-count').textContent =
+    `(${TAXONOMY.authors.filter(r => visibleClasses.has(r.class)).length.toLocaleString()} of ${TAXONOMY.authors.length.toLocaleString()} authors visible)`;
+}
+
+function selectAuthor(id) {
+  selectedId = id;
+  drawScatter();
+  // Re-render list to update selection highlight
+  renderAuthorList(document.getElementById('traj-search').value);
+  renderAuthorDetail();
+}
+
+function renderAuthorDetail() {
+  const info = document.getElementById('author-info');
+  const canvas = document.getElementById('author-traj');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!selectedId || !TAXONOMY || !TRAJ) {
+    info.textContent = 'Click a point on the scatter, or a row in the list above.';
+    return;
+  }
+  const r = TAXONOMY.authors.find(x => x.id === selectedId);
+  if (!r) { info.textContent = 'Author not found in shape-rich subset.'; return; }
+  const bins = (TRAJ[String(selectedId)] || []).filter(b => b.p <= 2020);
+  if (bins.length < 2) { info.textContent = 'No usable trajectory.'; return; }
+  info.innerHTML =
+    `<div style="font-weight:600;font-size:14px;margin-bottom:4px;">${r.name}`
+    + (r.exemplar ? ' <span class="ex-star">★ paper exemplar</span>' : '')
+    + `</div>`
+    + `<div style="margin-bottom:6px;">`
+    + `<span class="metric">class <b style="color:${CLASS_COLOR[r.class]};">${CLASS_LABEL[r.class]}</b></span>`
+    + `<span class="metric">η = <b>${r.eta.toFixed(2)}</b></span>`
+    + `<span class="metric">total path <b>${r.total_path}</b></span>`
+    + `<span class="metric">net <b>${r.net_disp}</b></span>`
+    + `</div>`
+    + `<div>`
+    + `<span class="metric"><b>${r.papers}</b> papers</span>`
+    + `<span class="metric"><b>${r.citations.toLocaleString()}</b> citations</span>`
+    + `<span class="metric"><b>${r.n_bins}</b> 5-yr bins (${r.span_years} yr span)</span>`
+    + `</div>`;
+
+  // Draw the trajectory polyline in author's local UMAP frame
+  const pts = bins.map(b => [b.x, b.y]);
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const xMid = (xMin + xMax) / 2, yMid = (yMin + yMax) / 2;
+  const span = Math.max(xMax - xMin, yMax - yMin, 8) * 1.4;
+  const W = canvas.width, H = canvas.height;
+  const X = v => W / 2 + ((v - xMid) / span) * W;
+  const Y = v => H / 2 - ((v - yMid) / span) * H;
+
+  // Subtle grid + axes
+  ctx.strokeStyle = '#e4e4e7'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
+  ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
+
+  // Polyline
+  ctx.strokeStyle = CLASS_COLOR[r.class]; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const px = X(pts[i][0]), py = Y(pts[i][1]);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Bin markers + year labels
+  ctx.fillStyle = CLASS_COLOR[r.class];
+  for (let i = 0; i < pts.length; i++) {
+    const px = X(pts[i][0]), py = Y(pts[i][1]);
+    const sz = Math.min(4 + Math.sqrt(bins[i].n) * 1.2, 11);
+    ctx.beginPath(); ctx.arc(px, py, sz, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 0.6; ctx.stroke();
+    ctx.fillStyle = '#222'; ctx.font = '10.5px sans-serif';
+    ctx.fillText(`${bins[i].p}`, px + 7, py + 4);
+    ctx.fillStyle = CLASS_COLOR[r.class];
+  }
+}
+
+function pickAtPoint(canvas, ev) {
+  if (!TAXONOMY) return null;
+  const rect = canvas.getBoundingClientRect();
+  const sx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+  const sy = (ev.clientY - rect.top) * (canvas.height / rect.height);
+  const rows = TAXONOMY.authors.filter(r => visibleClasses.has(r.class));
+  const xMax = Math.max(...TAXONOMY.authors.map(r => r.total_path)) * 1.05;
+  const yMax = Math.max(...TAXONOMY.authors.map(r => r.net_disp)) * 1.05;
+  const lim = Math.max(xMax, yMax);
+  const padL = 50, padR = 12, padT = 12, padB = 38;
+  const plotW = canvas.width - padL - padR;
+  const plotH = canvas.height - padT - padB;
+  const X = v => padL + (v / lim) * plotW;
+  const Y = v => canvas.height - padB - (v / lim) * plotH;
+  let best = null, bestD = 12 * 12;
+  for (const r of rows) {
+    const dx = X(r.total_path) - sx, dy = Y(r.net_disp) - sy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD) { bestD = d2; best = r; }
+  }
+  return best ? best.id : null;
+}
+
+document.getElementById('scatter').addEventListener('click', ev => {
+  const id = pickAtPoint(ev.target, ev);
+  if (id != null) selectAuthor(id);
+});
+document.getElementById('traj-search').addEventListener('input', ev => {
+  renderAuthorList(ev.target.value);
+});
+
+(async function init() {
+  buildLegend();
+  const [tax, traj] = await Promise.all([
+    fetch(`data/trajectory_taxonomy.json?v=${cacheBust}`).then(r => r.json()),
+    fetch(`data/author_trajectories.json?v=${cacheBust}`).then(r => r.json()),
+  ]);
+  TAXONOMY = tax; TRAJ = traj;
+  drawScatter();
+  renderAuthorList();
+  // Auto-select Mahmassani as a friendly default
+  const def = TAXONOMY.authors.find(r => String(r.name).toLowerCase().startsWith('mahmassani'));
+  if (def) selectAuthor(def.id);
+})();
+</script>
+{% endblock %}

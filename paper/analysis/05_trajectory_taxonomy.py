@@ -315,6 +315,51 @@ def main() -> int:  # noqa: C901
         json.dumps(summary, indent=2)
     )
     print("  ✓ paper/analysis/_trajectory_taxonomy.json")
+
+    # ------------------------------------------------------------------
+    # Per-author classification, written to data/processed/ for the site
+    # to consume (Trajectories tab). Keeps only the shape-rich subset.
+    # ------------------------------------------------------------------
+    EXEMPLAR_NAMES = {
+        "bhat, chandra":     "stayer",
+        "kockelman, kara":   "drifter",
+        "mahmassani, hani":  "returner",
+        "davis, gary":       "switcher",
+    }
+    site_rows = []
+    for _, r in df.iterrows():
+        nm = str(r["name"] or "").lower()
+        is_ex = any(nm.startswith(k) and r["class"] == v
+                    for k, v in EXEMPLAR_NAMES.items())
+        site_rows.append({
+            "id":         int(r["id"]),
+            "name":       r["name"],
+            "class":      r["class"],
+            "eta":        round(float(r["efficiency"]), 3),
+            "total_path": round(float(r["total_path"]), 2),
+            "net_disp":   round(float(r["net_disp"]), 2),
+            "papers":     int(r["papers_all"]),
+            "citations":  int(r["citations"]),
+            "n_bins":     int(r["bins"]),
+            "span_years": int(r["span_years"]),
+            "exemplar":   is_ex,
+        })
+    site_payload = {
+        "config": {
+            "tau_stay":   TAU_STAY,
+            "tau_eff":    TAU_EFF_DRIFT,
+            "tau_net":    TAU_NET,
+            "min_bins":   MIN_BINS,
+            "n_total":    int(n_total),
+            "n_shape_rich": int(len(df)),
+        },
+        "authors": site_rows,
+    }
+    site_path = ROOT / "data" / "processed" / "trajectory_taxonomy.json"
+    site_path.write_text(json.dumps(site_payload, allow_nan=False))
+    print(f"  ✓ data/processed/trajectory_taxonomy.json "
+          f"({len(site_rows):,} authors)")
+
     print("[traj] done")
     return 0
 
