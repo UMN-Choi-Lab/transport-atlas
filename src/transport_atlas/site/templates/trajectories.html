@@ -164,13 +164,14 @@ function drawScatter() {
   ctx.save(); ctx.translate(13, H / 2 + 60); ctx.rotate(-Math.PI / 2);
   ctx.fillText('net displacement', 0, 0); ctx.restore();
 
-  // Points
+  // Points — skip the selected author here so it draws last, on top.
   for (const r of rows) {
     if (!visibleClasses.has(r.class)) continue;
+    if (r.id === selectedId) continue;
     const x = X(r.total_path), y = Y(r.net_disp);
     ctx.fillStyle = CLASS_COLOR[r.class];
-    ctx.globalAlpha = (r.id === selectedId) ? 1 : 0.45;
-    ctx.beginPath(); ctx.arc(x, y, r.id === selectedId ? 4 : 2.4, 0, 2 * Math.PI);
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath(); ctx.arc(x, y, 2.4, 0, 2 * Math.PI);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -191,6 +192,48 @@ function drawScatter() {
     ctx.fillStyle = '#444'; ctx.font = '10.5px sans-serif';
     const last = String(r.name).split(',')[0];
     ctx.fillText(last, x + 9, y + 4);
+  }
+
+  // Selected author — draw last so nothing occludes it. Always draw it,
+  // even if its class is filtered out, since the user explicitly chose it.
+  if (selectedId != null) {
+    const sel = TAXONOMY.authors.find(r => r.id === selectedId);
+    if (sel) {
+      const x = X(sel.total_path), y = Y(sel.net_disp);
+      // Crosshair guides
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(padL, y); ctx.lineTo(W - padR, y);
+      ctx.moveTo(x, padT); ctx.lineTo(x, H - padB);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Outer halo
+      ctx.fillStyle = CLASS_COLOR[sel.class];
+      ctx.globalAlpha = 0.18;
+      ctx.beginPath(); ctx.arc(x, y, 12, 0, 2 * Math.PI); ctx.fill();
+      ctx.globalAlpha = 1;
+      // Solid dot
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI); ctx.fill();
+      // White inner ring + colored outer ring for contrast on any background
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI); ctx.stroke();
+      ctx.strokeStyle = CLASS_COLOR[sel.class]; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 8.5, 0, 2 * Math.PI); ctx.stroke();
+      // Name label
+      const last = String(sel.name).split(',')[0]
+        .replace(/^\w/, c => c.toUpperCase());
+      ctx.font = 'bold 11px sans-serif';
+      const tw = ctx.measureText(last).width;
+      // Position label to whichever side has more room
+      const labelLeft = (x + tw + 14 > W - padR);
+      const lx = labelLeft ? x - tw - 12 : x + 12;
+      const ly = y + 4;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.fillRect(lx - 3, ly - 11, tw + 6, 14);
+      ctx.fillStyle = '#222';
+      ctx.fillText(last, lx, ly);
+    }
   }
 }
 
