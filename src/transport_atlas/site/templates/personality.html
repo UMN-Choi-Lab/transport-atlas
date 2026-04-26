@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Researcher Personality — Transport Atlas{% endblock %}
+
+{% block content %}
+<style>
+  .pers-axes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+               gap: 12px; margin-bottom: 18px; }
+  .pers-axis { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+               padding: 12px 14px; }
+  .pers-axis h3 { margin: 0 0 4px; font-size: 13px; color: var(--accent);
+                  text-transform: uppercase; letter-spacing: 0.4px; }
+  .pers-axis p { margin: 2px 0; font-size: 13px; color: var(--fg); }
+  .pers-axis .endpoints { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+  .pers-axis .ep { padding: 2px 7px; border-radius: 10px; background: #eef2f7;
+                   color: var(--fg); font-weight: 600; }
+
+  #cells-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+                padding: 14px; margin-bottom: 16px; }
+  #cells-wrap h2 { margin: 0 0 4px; font-size: 15px; }
+  #cells-wrap .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  #cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+           gap: 8px; }
+  .cell { padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px;
+          cursor: pointer; transition: background 0.1s, transform 0.05s; }
+  .cell:hover { background: #f5f7fb; transform: translateY(-1px); }
+  .cell.sel { background: #e6f0ff; border-color: var(--accent); }
+  .cell .label { font-size: 12px; font-weight: 600; line-height: 1.25; }
+  .cell .count { font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 3px; }
+
+  #table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+                padding: 14px; }
+  #table-wrap h2 { margin: 0 0 4px; font-size: 15px; }
+  #table-wrap .sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  #pers-table { font-size: 12.5px; }
+  .help { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.55; }
+</style>
+
+<h1 style="font-size: 22px; margin: 0 0 4px;">Researcher Personality</h1>
+<p style="color: var(--muted); margin: 0 0 14px; font-size: 13px;">
+  Each classified researcher gets a four-letter type assembled from
+  four career-stage-neutral axes. Cell counts give the population
+  inside each of the 16 types; click a cell to filter the table to its
+  members. The classification is restricted to the
+  <span id="n-classified">…</span> researchers for whom all four axes
+  are computable.
+</p>
+
+<div class="pers-axes" id="axes-panel">
+  <!-- axes injected by JS once data loads -->
+</div>
+
+<div id="cells-wrap">
+  <h2>16 personality cells</h2>
+  <div class="sub">
+    Sorted by population. Click a cell to filter the table. Click again
+    to clear the filter.
+  </div>
+  <div id="cells"></div>
+</div>
+
+<div id="table-wrap">
+  <h2>Per-author profile</h2>
+  <div class="sub">
+    Default sort is by citations. Click a column header to re-rank.
+    The four binary axes are shown as separate columns; the combined
+    type is in the first column.
+  </div>
+  <div id="pers-table"></div>
+  <div class="help">
+    Caveats: the population is restricted to authors with at least
+    three trajectory bins (≥10 publication-year span) and at least
+    three coauthors with semantic embeddings. The <em>Broker</em>
+    axis uses a within-subset median split, because nearly the entire
+    classified subset already sits in the global top-decile of
+    weighted betweenness.
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.5/js/tabulator.min.js"></script>
+<script>
+const PAGE = "personality";
+const AXIS_DESCRIPTIONS = {
+  mover:   { name: "Mover",    pos: "Mover",        neg: "Stayer",
+             desc: "Career-arc shape: does the author's centroid move across decades?" },
+  topical: { name: "Topical",  pos: "Homophilous",  neg: "Heterophilous",
+             desc: "Coauthor topical homophily: same-community fraction, median split." },
+  bridge:  { name: "Bridge",   pos: "Broker",       neg: "Local",
+             desc: "Network brokerage (weighted betweenness), within-subset median split." },
+  solo:    { name: "Style",    pos: "Team",         neg: "Solo",
+             desc: "Mean team size on the author's papers, median split." },
+};
+
+let TABLE = null;
+let SEL_TYPE = null;
+
+fetch("data/author_personality.json?v={{ cache_bust }}").then(r => r.json()).then(payload => {
+  const summary = payload.summary;
+  const authors = payload.authors;
+
+  document.getElementById("n-classified").textContent =
+    summary.n_authors_classified.toLocaleString();
+
+  // Axis tiles
+  const axesPanel = document.getElementById("axes-panel");
+  ["mover","topical","bridge","solo"].forEach(k => {
+    const a = AXIS_DESCRIPTIONS[k];
+    const el = document.createElement("div");
+    el.className = "pers-axis";
+    el.innerHTML = `
+      <h3>${a.name}</h3>
+      <div class="endpoints"><span class="ep">${a.neg}</span>↔<span class="ep">${a.pos}</span></div>
+      <p>${a.desc}</p>`;
+    axesPanel.appendChild(el);
+  });
+
+  // 16 cells
+  const cellsEl = document.getElementById("cells");
+  const counts = summary.cell_counts;
+  // Already sorted desc in summary
+  for (const [label, n] of Object.entries(counts)) {
+    const el = document.createElement("div");
+    el.className = "cell";
+    el.dataset.type = label;
+    el.innerHTML = `<div class="label">${label.replaceAll("-", " · ")}</div>
+                    <div class="count">${n.toLocaleString()}</div>`;
+    el.addEventListener("click", () => {
+      if (SEL_TYPE === label) {
+        SEL_TYPE = null;
+        document.querySelectorAll(".cell").forEach(c => c.classList.remove("sel"));
+        TABLE.clearFilter();
+      } else {
+        SEL_TYPE = label;
+        document.querySelectorAll(".cell").forEach(c => c.classList.toggle("sel", c.dataset.type === label));
+        TABLE.setFilter("type", "=", label);
+      }
+    });
+    cellsEl.appendChild(el);
+  }
+
+  // Table
+  TABLE = new Tabulator("#pers-table", {
+    data: authors,
+    layout: "fitColumns",
+    pagination: true,
+    paginationSize: 25,
+    initialSort: [{ column: "citations", dir: "desc" }],
+    columns: [
+      { title: "Type", field: "type", widthGrow: 3, sorter: "string",
+        headerFilter: "input", headerFilterPlaceholder: "filter…" },
+      { title: "Author", field: "name", widthGrow: 2,
+        headerFilter: "input", headerFilterPlaceholder: "search…" },
+      { title: "Mover", field: "mover", widthGrow: 1 },
+      { title: "Topical", field: "topical", widthGrow: 1 },
+      { title: "Bridge", field: "bridge", widthGrow: 1 },
+      { title: "Style", field: "solo", widthGrow: 1 },
+      { title: "Homophily", field: "homophily", widthGrow: 1, sorter: "number",
+        formatter: c => (c.getValue() * 100).toFixed(0) + "%" },
+      { title: "Team size", field: "mean_team_size", widthGrow: 1, sorter: "number" },
+      { title: "Papers", field: "n_papers", widthGrow: 1, sorter: "number" },
+      { title: "Citations", field: "citations", widthGrow: 1, sorter: "number",
+        formatter: c => (c.getValue() || 0).toLocaleString() },
+    ],
+  });
+}).catch(err => {
+  document.getElementById("cells-wrap").innerHTML =
+    `<h2>Data unavailable</h2><div class="sub">${err}</div>`;
+});
+</script>
+{% endblock %}
