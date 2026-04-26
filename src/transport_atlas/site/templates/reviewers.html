@@ -45,6 +45,27 @@
   table.results .coi-2 { color: #d97706; }
   table.results .coi-3 { color: #65a30d; }
   table.results .coi-x { color: var(--muted); }
+  .coi-badge {
+    display: inline-block; padding: 2px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; letter-spacing: .2px; cursor: help;
+    border: 1px solid transparent;
+  }
+  .coi-badge.b1 { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+  .coi-badge.b2 { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .coi-badge.b3 { background: #ecfeff; color: #155e75; border-color: #cffafe; }
+  .evidence {
+    margin: 4px 0 8px 28px; padding: 6px 10px; background: #fafbfc;
+    border-left: 2px solid var(--accent); border-radius: 0 4px 4px 0;
+    font-size: 12px;
+  }
+  .evidence summary { cursor: pointer; color: var(--muted); font-weight: 600; outline: none; user-select: none; }
+  .evidence summary:hover { color: var(--accent); }
+  .evidence ul { margin: 4px 0 0; padding: 0 0 0 18px; }
+  .evidence li { margin: 2px 0; line-height: 1.35; }
+  .evidence .e-score { font-variant-numeric: tabular-nums; color: #475569; font-weight: 600; }
+  .evidence .e-meta { color: var(--muted); font-size: 11.5px; }
+  .evidence a { color: inherit; text-decoration: none; }
+  .evidence a:hover { color: var(--accent); text-decoration: underline; }
   table.results .venue-hit { color: #047857; font-weight: 700; background: #ecfdf5; padding: 0 4px; border-radius: 3px; }
   .preset-btn {
     background: #f1f5f9; border: 1px solid var(--border); border-radius: 999px;
@@ -62,8 +83,10 @@
 <p class="muted" style="font-size:13px; max-width:900px;">
   Paste a paper's title and abstract. We embed it with SPECTER2 (Cohan et&nbsp;al. 2020 / Singh et&nbsp;al. 2023) in your browser,
   then rank authors by cosine similarity to their citation- and recency-weighted SPECTER2 author centroid.
-  Optional: enter your ORCID or name to filter out 1- and 2-hop coauthors (COI). Everything runs locally —
-  the query never leaves your machine.
+  <b>Optional:</b> paste the bibliography to use cited papers as positive signal (DOIs are matched into the atlas corpus);
+  enter author names/ORCIDs to flag and filter coauthors (COI).
+  Each top reviewer ships with 1–3 of <em>their own</em> papers most similar to your query, so you can audit the recommendation.
+  Everything runs locally — the query never leaves your machine.
 </p>
 
 {% if specter2_is_default %}
@@ -92,6 +115,17 @@
     <div class="form-row">
       <label for="rev-abstract">Abstract</label>
       <textarea id="rev-abstract" placeholder="Forecasting the joint trajectories of human-driven and autonomous vehicles at unsignalized intersections..."></textarea>
+    </div>
+    <div class="form-row">
+      <label for="rev-refs">References (optional, paste bibliography — DOIs are extracted &amp; matched into the atlas corpus)</label>
+      <textarea id="rev-refs" rows="4" style="min-height:90px;" placeholder="Paste BibTeX, plain-text bibliography, or a list of DOIs. Anything that isn't a DOI is ignored."></textarea>
+      <div style="display:flex; align-items:center; gap:10px; margin-top:6px; font-size:12px; color:var(--muted);">
+        <label for="rev-refs-alpha" style="text-transform:none; letter-spacing:0; font-weight:500;">
+          Refs blend weight (α): <span id="rev-refs-alpha-val" style="font-variant-numeric:tabular-nums; color:#1e293b; font-weight:600;">0.40</span>
+        </label>
+        <input type="range" id="rev-refs-alpha" min="0" max="1" step="0.05" value="0.40" style="flex:1; max-width:280px;">
+        <span style="font-size:11.5px;">α=0 ignores refs · α=1 ignores title/abstract</span>
+      </div>
     </div>
     <div class="form-inline">
       <div class="form-row" style="flex:2 1 320px;">
@@ -208,6 +242,17 @@ let INDEX = null;        // parsed reviewer_index.json
 let AUTH_INT8 = null;    // Int8Array of length n_authors * EMBED_DIM
 let SCALES = null;       // Float32Array of length n_authors
 let extractor = null;    // transformers.js feature-extraction pipeline
+let PAPER_INDEX = null;  // parsed paper_index.json (lazy: loaded on first Find)
+const paperVecCache = new Map();  // pidx -> Float32Array(EMBED_DIM) dequantized & L2-normed
+
+// Refs alpha live readout
+const refsAlphaInput = $("#rev-refs-alpha");
+const refsAlphaVal = $("#rev-refs-alpha-val");
+if (refsAlphaInput) {
+  refsAlphaInput.addEventListener("input", () => {
+    refsAlphaVal.textContent = parseFloat(refsAlphaInput.value).toFixed(2);
+  });
+}
 
 async function loadIndex() {
   if (INDEX) return;
@@ -229,6 +274,193 @@ async function loadIndex() {
     throw new Error(`bin size ${AUTH_INT8.length} != ${INDEX.n_authors} × ${INDEX.dim}`);
   }
   setStatus(`Loaded ${INDEX.n_authors.toLocaleString()} authors, ${INDEX.n_concepts.toLocaleString()} concepts.`);
+}
+
+async function loadPaperIndex() {
+  if (PAPER_INDEX) return;
+  setStatus("Loading paper metadata (~10 MB) ...");
+  const r = await fetch(`data/paper_index.json?v=${CACHE_BUST}`);
+  if (!r.ok) throw new Error(`paper_index.json: HTTP ${r.status}`);
+  PAPER_INDEX = await r.json();
+  if (PAPER_INDEX.dim !== EMBED_DIM) {
+    throw new Error(`paper_index dim ${PAPER_INDEX.dim} != ${EMBED_DIM}`);
+  }
+  setStatus(`Paper index: ${PAPER_INDEX.n_papers.toLocaleString()} papers, `
+    + `${Object.keys(PAPER_INDEX.doi_to_idx).length.toLocaleString()} DOIs in lookup.`);
+}
+
+async function fetchPaperRows(pidxs) {
+  // Batched range-fetch of multiple paper rows. Returns a Map<pidx, Float32Array(EMBED_DIM)>.
+  // Cached rows are returned without a network round-trip. Each row arrives as
+  // [scale: float32 LE (4)][int8 vec × EMBED_DIM]; we dequantize to L2-normalized floats.
+  const ROW = PAPER_INDEX.row_bytes;
+  const out = new Map();
+  const fresh = [];
+  for (const pidx of pidxs) {
+    if (paperVecCache.has(pidx)) out.set(pidx, paperVecCache.get(pidx));
+    else if (!fresh.includes(pidx)) fresh.push(pidx);
+  }
+  if (!fresh.length) return out;
+  // Issue parallel range requests. HTTP/2 multiplexes; browser handles concurrency.
+  const url = `data/paper_emb.bin?v=${CACHE_BUST}`;
+  const results = await Promise.all(fresh.map(async (pidx) => {
+    const start = pidx * ROW;
+    const end = start + ROW - 1;
+    const r = await fetch(url, { headers: { "Range": `bytes=${start}-${end}` } });
+    if (!(r.ok || r.status === 206)) throw new Error(`paper_emb.bin: HTTP ${r.status}`);
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength !== ROW) throw new Error(`paper_emb row ${pidx}: ${buf.byteLength} != ${ROW}`);
+    const dv = new DataView(buf);
+    const scale = dv.getFloat32(0, true);
+    const i8 = new Int8Array(buf, 4, EMBED_DIM);
+    const vec = new Float32Array(EMBED_DIM);
+    const k = scale / 127;
+    for (let d = 0; d < EMBED_DIM; d++) vec[d] = k * i8[d];
+    return [pidx, vec];
+  }));
+  for (const [pidx, vec] of results) {
+    paperVecCache.set(pidx, vec);
+    out.set(pidx, vec);
+  }
+  return out;
+}
+
+// ── Per-author evidence: lazy + opportunistic background prefetch ────────
+//
+// State per ranked author:
+//   evidenceState.get(aIdx) = { promise, evidence?, error? }
+//
+// Calling ensureEvidence(aIdx, queryVec) is idempotent: the first call kicks
+// off a fetch, subsequent calls return the same promise. Concurrency for the
+// background prefetch is bounded; click-jumps just call ensureEvidence(idx),
+// which either returns the in-flight promise or starts one (potentially over
+// the prefetch concurrency limit, which is the desired "user click wins"
+// behavior).
+const evidenceState = new Map();
+
+async function ensureEvidence(aIdx, queryVec) {
+  let s = evidenceState.get(aIdx);
+  if (s) return s.promise;
+  s = { promise: null, evidence: null, error: null };
+  evidenceState.set(aIdx, s);
+  s.promise = (async () => {
+    try {
+      const a = INDEX.authors[aIdx];
+      const pi = a && a.pi ? a.pi : [];
+      if (!pi.length) {
+        s.evidence = [];
+        paintEvidenceRow(aIdx, []);
+        return [];
+      }
+      const rowMap = await fetchPaperRows(pi);
+      const scored = [];
+      for (const p of pi) {
+        const v = rowMap.get(p);
+        if (!v) continue;
+        let dot = 0;
+        for (let d = 0; d < EMBED_DIM; d++) dot += queryVec[d] * v[d];
+        scored.push({ pidx: p, score: dot });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      s.evidence = scored;
+      paintEvidenceRow(aIdx, scored);
+      return scored;
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      s.error = msg;
+      paintEvidenceRow(aIdx, null, msg);
+      throw err;
+    }
+  })();
+  return s.promise;
+}
+
+const PREFETCH_CONCURRENCY = 4;
+
+async function prefetchEvidenceQueue(rankedIdxs, queryVec, onProgress) {
+  // Worker-pool over a shared queue. Workers pull author indices in rank order
+  // and run ensureEvidence() until the queue is drained. ensureEvidence is
+  // idempotent, so click-jumps don't cause double work.
+  const queue = rankedIdxs.slice();
+  let done = 0;
+  const total = queue.length;
+  const workers = Array.from({ length: PREFETCH_CONCURRENCY }, async () => {
+    while (queue.length) {
+      const aIdx = queue.shift();
+      if (aIdx == null) break;
+      try { await ensureEvidence(aIdx, queryVec); } catch (_e) { /* painted as error */ }
+      done++;
+      if (onProgress) onProgress(done, total);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function attachEvidenceClickJump(rankedIdxs, queryVec) {
+  // Each <details data-aidx="..."> in the table fires "toggle" when opened.
+  // Because ensureEvidence is idempotent, we just call it on every open —
+  // it returns the cached promise if already started, or kicks one off if
+  // the prefetch worker hasn't reached this row yet.
+  const tbody = $("#rev-table tbody");
+  tbody.querySelectorAll('details[data-aidx]').forEach((d) => {
+    d.addEventListener("toggle", () => {
+      if (!d.open) return;
+      const aIdx = parseInt(d.dataset.aidx, 10);
+      if (Number.isNaN(aIdx)) return;
+      ensureEvidence(aIdx, queryVec).catch(() => {});
+    });
+  });
+}
+
+const DOI_REGEX = /\b(10\.\d{4,9}\/[^\s"<>{}|\\^`\[\]]+)/gi;
+function extractDOIs(text) {
+  const seen = new Set();
+  const out = [];
+  for (const m of (text || "").matchAll(DOI_REGEX)) {
+    let d = m[1].toLowerCase();
+    // Trim trailing punctuation that's commonly captured but isn't part of a DOI
+    d = d.replace(/[.,;:)\]]+$/, "");
+    if (!d || seen.has(d)) continue;
+    seen.add(d);
+    out.push(d);
+  }
+  return out;
+}
+
+async function refsVector(refsText) {
+  // Returns { vec: Float32Array|null, total, matched, missing[] } — vec is L2-normalized
+  // mean of dequantized matched-paper vectors (or null if nothing matched).
+  if (!refsText || !refsText.trim()) {
+    return { vec: null, total: 0, matched: 0, missing: [] };
+  }
+  await loadPaperIndex();
+  const dois = extractDOIs(refsText);
+  if (!dois.length) return { vec: null, total: 0, matched: 0, missing: [] };
+  const map = PAPER_INDEX.doi_to_idx;
+  const idxs = [];
+  const missing = [];
+  for (const d of dois) {
+    const i = map[d];
+    if (typeof i === "number") idxs.push(i);
+    else missing.push(d);
+  }
+  if (!idxs.length) return { vec: null, total: dois.length, matched: 0, missing };
+  const rows = await fetchPaperRows(idxs);
+  const mean = new Float32Array(EMBED_DIM);
+  let nUsed = 0;
+  for (const i of idxs) {
+    const v = rows.get(i);
+    if (!v) continue;
+    for (let d = 0; d < EMBED_DIM; d++) mean[d] += v[d];
+    nUsed++;
+  }
+  if (!nUsed) return { vec: null, total: dois.length, matched: 0, missing };
+  for (let d = 0; d < EMBED_DIM; d++) mean[d] /= nUsed;
+  let nrm = 0;
+  for (let d = 0; d < EMBED_DIM; d++) nrm += mean[d] * mean[d];
+  nrm = Math.sqrt(nrm) || 1;
+  for (let d = 0; d < EMBED_DIM; d++) mean[d] /= nrm;
+  return { vec: mean, total: dois.length, matched: nUsed, missing };
 }
 
 async function loadModel() {
@@ -307,27 +539,45 @@ function findAuthorIdxs(tokens) {
   return { matched: Array.from(matched), unmatched };
 }
 
-function coiDistances(srcIdxs, maxHops) {
-  // Multi-source BFS on coi_adj. Returns Map<idx, hops>. Each seed sits at hop 0.
-  // Caps the frontier expansion at maxHops.
+function coiBFS(srcIdxs, maxHops) {
+  // Multi-source BFS on coi_adj. Returns { dist: Map<idx,hops>, parent: Map<idx,parentIdx>,
+  // seedOf: Map<idx, seedIdx> }. Walking parent chain from any visited node leads back
+  // to its seed; that gives us the bridge author for the COI tooltip.
   const dist = new Map();
-  if (!srcIdxs || !srcIdxs.length || maxHops < 1) return dist;
+  const parent = new Map();
+  const seedOf = new Map();
+  if (!srcIdxs || !srcIdxs.length || maxHops < 1) return { dist, parent, seedOf };
   const adj = INDEX.coi_adj;
   let frontier = [];
   for (const s of srcIdxs) {
-    if (s != null && !dist.has(s)) { dist.set(s, 0); frontier.push(s); }
+    if (s != null && !dist.has(s)) {
+      dist.set(s, 0); seedOf.set(s, s); frontier.push(s);
+    }
   }
   for (let h = 1; h <= maxHops; h++) {
     const next = [];
     for (const u of frontier) {
-      for (const v of adj[u] || []) {
-        if (!dist.has(v)) { dist.set(v, h); next.push(v); }
+      for (const v of (adj[u] || [])) {
+        if (!dist.has(v)) {
+          dist.set(v, h); parent.set(v, u); seedOf.set(v, seedOf.get(u)); next.push(v);
+        }
       }
     }
     frontier = next;
     if (!frontier.length) break;
   }
-  return dist;
+  return { dist, parent, seedOf };
+}
+
+function coiBridgeChain(idx, parent) {
+  // Walk parent links to produce the bridge name list (excluding the visited node).
+  const chain = [];
+  let cur = parent.get(idx);
+  while (cur != null) {
+    chain.push(cur);
+    cur = parent.get(cur);
+  }
+  return chain;
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────
@@ -353,10 +603,93 @@ function venueLabel(slug) {
   return slug ? slug.replace(/^tr-/, "TR-").replace(/^t-(\w+)/, (_, x) => "T-" + x.toUpperCase()) : "";
 }
 
-function renderResults(ranked, distMap, title, targetVenue) {
+function escAttr(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escHtml(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderCoiCell(idx, distMap, parentMap) {
+  const d = distMap.get(idx);
+  if (d === undefined) return '<span class="coi-x">—</span>';
+  if (d === 0) return '<span class="coi-badge b1" title="self — submitted as author">★ self</span>';
+  if (d === 1) {
+    return '<span class="coi-badge b1" title="direct coauthor of a submitting author">★ direct coauthor</span>';
+  }
+  if (d === 2) {
+    const chain = coiBridgeChain(idx, parentMap);
+    const bridgeIdx = chain[0];   // one hop from this node toward the seed
+    const seedIdx = chain[chain.length - 1];
+    const bridgeName = bridgeIdx != null ? INDEX.authors[bridgeIdx].n : "";
+    const seedName = seedIdx != null ? INDEX.authors[seedIdx].n : "";
+    const tip = bridgeName && seedName
+      ? `co-coauthor (1 hop): bridges through ${bridgeName} → ${seedName}`
+      : "co-coauthor (1 hop away from a submitting author)";
+    return `<span class="coi-badge b2" title="${escAttr(tip)}">co-coauthor (d=2)</span>`;
+  }
+  return `<span class="coi-badge b3" title="reachable in ${d} hops">d=${d}</span>`;
+}
+
+function renderEvidenceItems(evidence) {
+  // Render the <li> contents for the top-3 papers (or a friendly empty message).
+  if (!evidence || !evidence.length) {
+    return `<li style="color:var(--muted);list-style:none;margin-left:-12px;">No indexed papers above the per-author cap to score.</li>`;
+  }
+  return evidence.slice(0, 3).map(({ pidx, score }) => {
+    const meta = PAPER_INDEX.papers[pidx];
+    const title = meta && meta.t ? meta.t : "(untitled)";
+    const year = meta && meta.y ? meta.y : "";
+    const venue = meta && meta.v ? venueLabel(meta.v) : "";
+    const doi = meta && meta.d ? meta.d : null;
+    const titleHtml = doi
+      ? `<a href="https://doi.org/${escAttr(doi)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
+      : escHtml(title);
+    return `<li><span class="e-score">${score.toFixed(3)}</span> &nbsp; ${titleHtml}<br>
+      <span class="e-meta">${escHtml(venue)}${venue && year ? " · " : ""}${escHtml(year)}${doi ? ` · <a href="https://doi.org/${escAttr(doi)}" target="_blank" rel="noopener">doi</a>` : ""}</span></li>`;
+  }).join("");
+}
+
+function renderEvidencePlaceholderRow(authorIdx, colspan) {
+  // The row is rendered immediately in "preparing" state. Background prefetch
+  // and/or a click on `<details>` will replace its body once the per-author
+  // paper rows arrive.
+  const tr = document.createElement("tr");
+  tr.className = "evidence-row";
+  tr.dataset.aidx = String(authorIdx);
+  tr.innerHTML = `<td colspan="${colspan}">
+    <details class="evidence" data-aidx="${authorIdx}">
+      <summary>▸ Why this match — <span class="evidence-status">preparing…</span></summary>
+      <ul class="evidence-list" style="display:none;"></ul>
+    </details>
+  </td>`;
+  return tr;
+}
+
+function paintEvidenceRow(authorIdx, evidence, errMsg) {
+  const tr = document.querySelector(`tr.evidence-row[data-aidx="${authorIdx}"]`);
+  if (!tr) return;
+  const status = tr.querySelector(".evidence-status");
+  const ul = tr.querySelector(".evidence-list");
+  if (errMsg) {
+    if (status) status.textContent = `unavailable (${errMsg})`;
+    return;
+  }
+  const n = evidence ? Math.min(3, evidence.length) : 0;
+  if (status) {
+    status.textContent = `${n} most-similar paper${n === 1 ? "" : "s"}`;
+  }
+  if (ul) {
+    ul.innerHTML = renderEvidenceItems(evidence);
+    ul.style.display = "";
+  }
+}
+
+function renderResults(ranked, distMap, parentMap, title, targetVenue, evidenceEnabled) {
   const tbody = $("#rev-table tbody");
   tbody.innerHTML = "";
   const concepts = INDEX.vocab_concepts;
+  const NCOLS = 7;
   for (let r = 0; r < ranked.length; r++) {
     const { idx, score } = ranked[r];
     const a = INDEX.authors[idx];
@@ -371,17 +704,11 @@ function renderResults(ranked, distMap, title, targetVenue) {
         ? `<span class="venue-hit" title="publishes in target venue">✓ ${lab}</span>`
         : lab;
     }).join(" · ");
-    const d = distMap.get(idx);
-    let coiHtml;
-    if (d === undefined) coiHtml = '<span class="coi-x">—</span>';
-    else if (d === 0) coiHtml = '<span class="coi-1">self</span>';
-    else if (d === 1) coiHtml = '<span class="coi-1">d=1</span>';
-    else if (d === 2) coiHtml = '<span class="coi-2">d=2</span>';
-    else coiHtml = `<span class="coi-3">d=${d}</span>`;
+    const coiHtml = renderCoiCell(idx, distMap, parentMap);
     tr.innerHTML = `
       <td class="num">${r + 1}</td>
       <td>
-        <div class="name"><a href="${profileHref}">${a.n}</a> ${orcidLink}</div>
+        <div class="name"><a href="${profileHref}">${escHtml(a.n)}</a> ${orcidLink}</div>
         <div class="muted" style="font-size:11.5px;">${venueChips}</div>
       </td>
       <td class="num">${cosLabel}</td>
@@ -390,6 +717,9 @@ function renderResults(ranked, distMap, title, targetVenue) {
       <td>${coiHtml}</td>
       <td class="concepts">${conceptStr}</td>`;
     tbody.appendChild(tr);
+    if (evidenceEnabled) {
+      tbody.appendChild(renderEvidencePlaceholderRow(idx, NCOLS));
+    }
   }
   $("#rev-result-count").textContent = `(${ranked.length} of ${INDEX.n_authors.toLocaleString()}; query: "${title.slice(0, 80)}${title.length > 80 ? "…" : ""}")`;
   $("#rev-results-panel").style.display = "block";
@@ -401,35 +731,69 @@ $("#rev-go").addEventListener("click", async () => {
   const abstract = $("#rev-abstract").value.trim();
   if (!title && !abstract) { setStatus("Enter a title and/or abstract.", "err"); return; }
   const submitter = $("#rev-submitter").value.trim();
+  const refsText = $("#rev-refs").value;
+  const refsAlpha = parseFloat($("#rev-refs-alpha").value);
   const topN = parseInt($("#rev-topn").value, 10) || 30;
   const coiMaxHops = parseInt($("#rev-coi-hops").value, 10) || 0;
   const targetVenue = $("#rev-venue").value || "";
   const VENUE_BOOST = 0.05;
 
   $("#rev-go").disabled = true;
+  const T = {};                // stage: { start, ms } timings
+  const tic = (name) => { T[name] = { start: performance.now() }; };
+  const toc = (name) => { T[name].ms = performance.now() - T[name].start; };
   try {
-    await loadIndex();
-    await loadModel();
+    tic("loadIndex"); await loadIndex(); toc("loadIndex");
+    tic("loadModel"); await loadModel(); toc("loadModel");
 
-    setStatus("Embedding query ...");
+    tic("embed"); setStatus("Embedding query ...");
     const text = abstract ? `${title}[SEP]${abstract}` : title;
     // SPECTER2: [CLS] pooling, no normalize (we'll L2 norm manually).
     const out = await extractor(text, { pooling: "cls", normalize: false });
     const raw = out.data;   // Float32Array length 768
     if (raw.length !== EMBED_DIM) throw new Error(`query dim ${raw.length} != ${EMBED_DIM}`);
     // L2 normalize
-    const queryVec = new Float32Array(EMBED_DIM);
+    let queryVec = new Float32Array(EMBED_DIM);
     let nrm = 0;
     for (let d = 0; d < EMBED_DIM; d++) nrm += raw[d] * raw[d];
     nrm = Math.sqrt(nrm) || 1;
     for (let d = 0; d < EMBED_DIM; d++) queryVec[d] = raw[d] / nrm;
+    toc("embed");
 
+    // ── Ask A: blend bibliography ────────────────────────────────────────
+    let refsInfo = null;
+    let refsError = null;
+    if (refsText && refsText.trim()) {
+      tic("refsBlend");
+      setStatus("Resolving bibliography → atlas papers ...");
+      try {
+        refsInfo = await refsVector(refsText);
+      } catch (err) {
+        console.warn("[rev] refs blend failed (continuing without refs):", err);
+        refsError = err.message;
+      }
+      if (refsInfo && refsInfo.vec) {
+        const a = Math.max(0, Math.min(1, refsAlpha));
+        const blend = new Float32Array(EMBED_DIM);
+        for (let d = 0; d < EMBED_DIM; d++) {
+          blend[d] = (1 - a) * queryVec[d] + a * refsInfo.vec[d];
+        }
+        // L2-renormalize the blended query
+        let bn = 0;
+        for (let d = 0; d < EMBED_DIM; d++) bn += blend[d] * blend[d];
+        bn = Math.sqrt(bn) || 1;
+        for (let d = 0; d < EMBED_DIM; d++) blend[d] /= bn;
+        queryVec = blend;
+      }
+      toc("refsBlend");
+    }
+
+    tic("scoreAuthors");
     setStatus(`Scoring ${INDEX.n_authors.toLocaleString()} authors ...`);
     const scores = cosineQueryVsAll(queryVec);
+    toc("scoreAuthors");
     if (targetVenue) {
       // Soft boost: lift any author whose top venues include the target.
-      // Boost is small enough that a strong off-venue match (e.g. cosine 0.65) still
-      // outranks a weak on-venue match (cosine 0.40 + 0.05).
       let nBoosted = 0;
       for (let a = 0; a < INDEX.n_authors; a++) {
         const v = INDEX.authors[a].v;
@@ -441,21 +805,17 @@ $("#rev-go").addEventListener("click", async () => {
       console.log(`[rev] venue boost: ${nBoosted} authors boosted by +${VENUE_BOOST} (target ${targetVenue})`);
     }
 
-    // COI distances. Parse the (multi-line) author field, look each one up,
-    // multi-source BFS from every matched author. Don't filter scores yet —
-    // we *show* d > maxHops entries (greyed) and only exclude d <= maxHops.
+    // COI BFS — keeps parents so we can show the bridge author in the C tooltip.
     const authorTokens = parseAuthorList(submitter);
     const { matched: authorIdxs, unmatched: authorMisses } = findAuthorIdxs(authorTokens);
-    const distMap = coiDistances(authorIdxs, Math.max(coiMaxHops, 3));   // BFS to 3 so we can label d=3
+    const { dist: distMap, parent: parentMap } = coiBFS(authorIdxs, Math.max(coiMaxHops, 3));
     const exclude = new Set();
     if (authorIdxs.length && coiMaxHops > 0) {
       for (const [idx, d] of distMap) if (d <= coiMaxHops) exclude.add(idx);
     }
 
-    // Take top (topN + |exclude|) candidates by score, then trim.
-    const cand = topN + exclude.size + 5;
+    // Rank: argsort scores desc, skip excluded.
     const idxs = Array.from(scores.keys());
-    // partial sort: argpartition top-K by score desc
     idxs.sort((a, b) => scores[b] - scores[a]);
     const ranked = [];
     for (const idx of idxs) {
@@ -463,20 +823,111 @@ $("#rev-go").addEventListener("click", async () => {
       ranked.push({ idx, score: scores[idx] });
       if (ranked.length >= topN) break;
     }
-    renderResults(ranked, distMap, title || abstract, targetVenue);
+
+    // ── Ask B: lazy + background prefetch ────────────────────────────────
+    // Render placeholders immediately; kick off a bounded-concurrency prefetch
+    // loop that paints each row when its evidence is ready. Clicking a row's
+    // <details> while preparing simply awaits the in-flight fetch (or starts
+    // one if the worker pool hasn't reached it yet).
+    let evidenceError = null;
+    let evidenceEnabled = false;
+    tic("loadPaperIndex");
+    try {
+      await loadPaperIndex();
+      evidenceEnabled = true;
+    } catch (err) {
+      console.warn("[rev] paper_index.json load failed:", err);
+      evidenceError = err && err.message ? err.message : String(err);
+    }
+    toc("loadPaperIndex");
+
+    // Reset per-query evidence state — earlier query's cache is per-query
+    // (because the score depends on queryVec).
+    evidenceState.clear();
+
+    tic("render");
+    renderResults(ranked, distMap, parentMap, title || abstract, targetVenue, evidenceEnabled);
+    toc("render");
+
+    // Kick off background prefetch (fire-and-forget). Update the result-count
+    // line as rows finish so the user can watch progress without DevTools.
+    if (evidenceEnabled) {
+      attachEvidenceClickJump(ranked.map(r => r.idx), queryVec);
+      const baseCountText = $("#rev-result-count").textContent;
+      const countEl = $("#rev-result-count");
+      tic("evidencePrefetch");
+      prefetchEvidenceQueue(
+        ranked.map(r => r.idx),
+        queryVec,
+        (done, total) => {
+          if (done < total) {
+            countEl.textContent = `${baseCountText}  · evidence ${done}/${total}`;
+          } else {
+            toc("evidencePrefetch");
+            countEl.textContent = `${baseCountText}  · evidence ready`;
+            const ms = T.evidencePrefetch?.ms;
+            console.log(`[rev] background prefetch finished in ${ms == null ? "?" : ms.toFixed(0)} ms`);
+          }
+        },
+      ).catch((err) => console.warn("[rev] prefetch loop error:", err));
+    }
+
+    // ── Timing summary (browser console + status line) ───────────────────
+    // evidencePrefetch finishes after this code runs (it's fire-and-forget),
+    // so its ms is filled in asynchronously via the onProgress callback.
+    const totalMs = Object.entries(T).reduce((acc, [k, v]) => v.ms != null ? acc + v.ms : acc, 0);
+    const fmt = (ms) => ms == null ? "-" : (ms < 100 ? ms.toFixed(1) : ms.toFixed(0));
+    const breakdown = [
+      ["loadIndex",       T.loadIndex],
+      ["loadModel",       T.loadModel],
+      ["embed",           T.embed],
+      ["refsBlend",       T.refsBlend],
+      ["scoreAuthors",    T.scoreAuthors],
+      ["loadPaperIndex",  T.loadPaperIndex],
+      ["render",          T.render],
+    ];
+    console.group(`[rev] timings — total ${fmt(totalMs)} ms`);
+    for (const [name, t] of breakdown) {
+      if (!t) continue;
+      const extra = (name === "evidenceFetch" && t.nFetched != null)
+        ? `  (fetched ${t.nFetched} of ${t.nUnique} unique paper rows)` : "";
+      console.log(`  ${name.padEnd(16)} ${fmt(t.ms).padStart(8)} ms${extra}`);
+    }
+    console.groupEnd();
+    window.__rev_timings = T;     // expose for ad-hoc inspection
+
+    // Status line: combine author-COI status + refs-blend status.
+    const parts = [];
     if (authorIdxs.length) {
       const matchedNames = authorIdxs.map((i) => INDEX.authors[i].n);
-      const head = `Done. Matched ${authorIdxs.length}/${authorTokens.length} author(s): ${matchedNames.slice(0, 4).join("; ")}${matchedNames.length > 4 ? " …" : ""}.`;
-      const tail = ` Excluded ${exclude.size} reviewers within ${coiMaxHops} hop(s).`;
-      const miss = authorMisses.length
-        ? ` Not found in atlas: ${authorMisses.slice(0, 3).join("; ")}${authorMisses.length > 3 ? " …" : ""} — their COI not applied.`
-        : "";
-      setStatus(head + tail + miss, authorMisses.length ? "" : "ok");
+      parts.push(`Matched ${authorIdxs.length}/${authorTokens.length} author(s): `
+        + `${matchedNames.slice(0, 4).join("; ")}${matchedNames.length > 4 ? " …" : ""}.`);
+      parts.push(`Excluded ${exclude.size} reviewer(s) within ${coiMaxHops} hop(s).`);
+      if (authorMisses.length) {
+        parts.push(`Not found in atlas: ${authorMisses.slice(0, 3).join("; ")}${authorMisses.length > 3 ? " …" : ""} — COI not applied for those.`);
+      }
     } else if (authorTokens.length) {
-      setStatus(`Done. None of ${authorTokens.length} author(s) matched the atlas — no COI filter applied. Tried: ${authorTokens.slice(0, 3).join("; ")}${authorTokens.length > 3 ? " …" : ""}`, "err");
+      parts.push(`None of ${authorTokens.length} author(s) matched the atlas — no COI filter applied.`);
     } else {
-      setStatus("Done. (No authors entered → no COI filter.)", "ok");
+      parts.push("No authors entered — COI filter off.");
     }
+    if (evidenceError) {
+      parts.push(`Evidence panels disabled (${evidenceError}). Reviewers ranked by author centroid only.`);
+    }
+    if (refsError) {
+      parts.push(`Refs blend skipped (${refsError}).`);
+    } else if (refsInfo) {
+      if (refsInfo.matched > 0) {
+        parts.push(`Refs blend (α=${refsAlpha.toFixed(2)}): used ${refsInfo.matched}/${refsInfo.total} DOIs from the bibliography.`);
+      } else if (refsInfo.total > 0) {
+        parts.push(`Refs blend: 0/${refsInfo.total} DOIs matched the atlas — query unchanged.`);
+      } else {
+        parts.push("Refs blend: no DOIs found in the pasted text — query unchanged.");
+      }
+    }
+    const kind = authorMisses.length || refsError || evidenceError || (refsInfo && refsInfo.total > 0 && refsInfo.matched === 0) ? "" : "ok";
+    const tag = ` [score ${fmt(T.scoreAuthors?.ms)}ms · embed ${fmt(T.embed?.ms)}ms · render ${fmt(T.render?.ms)}ms · total ${fmt(totalMs)}ms · evidence prefetching in background]`;
+    setStatus("Done. " + parts.join(" ") + tag, kind);
   } catch (err) {
     console.error(err);
     setStatus(`Error: ${err.message}`, "err");

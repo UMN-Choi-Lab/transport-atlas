@@ -64,9 +64,11 @@ MIN_PAPERS_FOR_INDEX = 2
 TOP_CONCEPTS_PER_AUTHOR = 12              # explanation only, not ranking
 MIN_CONCEPT_LEVEL = 2
 RECENCY_HALF_LIFE_YEARS = 6.0             # author-vector recency weight
+PAPERS_PER_AUTHOR_CAP = 30                # candidate papers shipped per author for ask B
 THIS_YEAR = datetime.now().year
 EMBED_DIR = Path(os.environ.get("EMBED_OUT", "/data2/chois/transport-atlas"))
 EMBED_DIM = 768
+PAPER_ROW_BYTES = 4 + EMBED_DIM           # [scale: f32][int8 vec × 768]
 MODEL_ID = "allenai/specter2_base"
 
 
@@ -289,6 +291,33 @@ def main() -> int:
           f"(int8 shape={A_q.shape}, mean abs_max={float(abs_max.mean()):.4f})",
           flush=True)
 
+    # --- per-author top-paper rows (candidates for ask B "evidence") ---------
+    # For each kept author, take the top-N (emb_row, weight) tuples by weight.
+    # weight = cite_w * recency * (1/n_authors) — already encodes the ranking we
+    # want (most-typical paper for this author). We keep the original E-row index
+    # here; the global kept_paper_idx mapping is built below once we know the
+    # union across all kept authors.
+    author_top_emb_rows: dict[int, list[int]] = {}
+    for ai, k in enumerate(keys_sorted):
+        if atlas_key_to_nodeid.get(k) is None:
+            continue
+        items = author_rows[k]
+        if not items:
+            author_top_emb_rows[ai] = []
+            continue
+        # sort by weight desc; tie-break stable
+        items_sorted = sorted(items, key=lambda t: -t[2])
+        top = items_sorted[:PAPERS_PER_AUTHOR_CAP]
+        # dedupe emb_row preserving order (a paper can appear once per author anyway)
+        seen = set()
+        rows: list[int] = []
+        for emb_row, _, _ in top:
+            if emb_row in seen:
+                continue
+            seen.add(emb_row)
+            rows.append(int(emb_row))
+        author_top_emb_rows[ai] = rows
+
     # --- per-author entries --------------------------------------------------
     authors_out = []
     orcid_to_idx: dict[str, int] = {}
@@ -357,6 +386,80 @@ def main() -> int:
     A_q_kept = A_q[keep_indices]
     scales_kept = scales[keep_indices]
 
+    # --- per-paper index (ask A: refs blend, ask B: evidence rerank) ---------
+    print("[rev] building per-paper index ...", flush=True)
+    t0 = time.time()
+    # Union all top-N paper rows across kept authors. Preserve sort order (smallest
+    # E-row index first) so the bin layout is deterministic build-to-build.
+    kept_emb_rows_set: set[int] = set()
+    for ai_orig in keep_indices:
+        kept_emb_rows_set.update(author_top_emb_rows.get(ai_orig, []))
+    kept_emb_rows = sorted(kept_emb_rows_set)
+    n_kept_papers = len(kept_emb_rows)
+    emb_row_to_pidx: dict[int, int] = {r: i for i, r in enumerate(kept_emb_rows)}
+
+    # Attach per-author paper_idxs (`pi`) — indices into the global kept_emb_rows.
+    for ai_keep, ai_orig in enumerate(keep_indices):
+        rows = author_top_emb_rows.get(ai_orig, [])
+        authors_out[ai_keep]["pi"] = [emb_row_to_pidx[r] for r in rows if r in emb_row_to_pidx]
+
+    # Quantize the kept papers' SPECTER2 vectors (per-row abs-max, int8).
+    P = E[np.asarray(kept_emb_rows, dtype=np.int64)].copy()        # (n_kept, 768)
+    p_norms = np.linalg.norm(P, axis=1, keepdims=True) + 1e-8
+    P /= p_norms                                                    # L2-normalize
+    p_abs_max = np.abs(P).max(axis=1)
+    p_abs_max = np.where(p_abs_max < 1e-8, 1e-8, p_abs_max)
+    P_q = np.round(P / p_abs_max[:, None] * 127.0).clip(-127, 127).astype(np.int8)
+    p_scales = p_abs_max.astype(np.float32)
+
+    # Build paper metadata + DOI lookup.
+    # `pid_to_row` maps paper_id → row in E. We need the inverse for kept rows.
+    row_to_pid: dict[int, str] = {row: pid for pid, row in pid_to_row.items()}
+    paper_meta: list[dict] = []
+    doi_to_idx: dict[str, int] = {}
+    titles = papers["title"].tolist()
+    years = papers["year"].tolist()
+    venues = papers["venue_slug"].tolist()
+    dois = papers["doi"].tolist()
+    pid_to_papers_row = paper_pid_to_pidx
+    skipped_no_meta = 0
+    for new_idx, e_row in enumerate(kept_emb_rows):
+        pid = row_to_pid.get(e_row)
+        if pid is None:
+            skipped_no_meta += 1
+            paper_meta.append({"t": "", "y": None, "v": "", "d": None})
+            continue
+        p_pidx = pid_to_papers_row.get(pid)
+        if p_pidx is None:
+            skipped_no_meta += 1
+            paper_meta.append({"t": "", "y": None, "v": "", "d": None})
+            continue
+        title = titles[p_pidx]
+        if not isinstance(title, str):
+            title = ""
+        title = title.strip()[:240]
+        yr_raw = years[p_pidx]
+        try:
+            yr = int(yr_raw) if yr_raw is not None and not (
+                isinstance(yr_raw, float) and yr_raw != yr_raw
+            ) else None
+        except (TypeError, ValueError):
+            yr = None
+        vn = venues[p_pidx]
+        vn = vn if isinstance(vn, str) else ""
+        doi = dois[p_pidx]
+        if isinstance(doi, str) and doi:
+            doi_clean = doi.strip().lower()
+            doi_to_idx[doi_clean] = new_idx
+        else:
+            doi_clean = None
+        paper_meta.append({"t": title, "y": yr, "v": vn, "d": doi_clean})
+    print(f"[rev] kept papers: {n_kept_papers:,}  "
+          f"(top-{PAPERS_PER_AUTHOR_CAP}/author, dedup'd; "
+          f"{len(doi_to_idx):,} DOIs in lookup; "
+          f"{skipped_no_meta:,} missing meta) in {time.time()-t0:.1f}s",
+          flush=True)
+
     # --- COI adjacency -------------------------------------------------------
     node_to_arr_idx = {a["i"]: idx for idx, a in enumerate(authors_out)}
     coi_adj: list[list[int]] = [[] for _ in authors_out]
@@ -408,6 +511,33 @@ def main() -> int:
     json_path.write_text(json.dumps(out, allow_nan=False, separators=(",", ":")))
     print(f"[rev] wrote {json_path}  "
           f"({json_path.stat().st_size/(1024*1024):.1f} MB)", flush=True)
+
+    # --- per-paper bin + JSON (Range-fetched from the browser) --------------
+    # Layout: each row is exactly PAPER_ROW_BYTES bytes, so the browser computes
+    # `bytes=[i*ROW, i*ROW+ROW-1]` to fetch row i.
+    paper_bin_path = out_dir / "paper_emb.bin"
+    with open(paper_bin_path, "wb") as f:
+        for i in range(n_kept_papers):
+            f.write(p_scales[i].tobytes())            # 4 bytes float32 LE
+            f.write(P_q[i].tobytes())                 # 768 bytes int8
+    print(f"[rev] wrote {paper_bin_path}  "
+          f"({paper_bin_path.stat().st_size/(1024*1024):.1f} MB; "
+          f"{n_kept_papers} rows × {PAPER_ROW_BYTES} bytes)", flush=True)
+
+    paper_idx_doc = {
+        "version": 1,
+        "build_time": out["build_time"],
+        "row_bytes": PAPER_ROW_BYTES,
+        "dim": EMBED_DIM,
+        "n_papers": n_kept_papers,
+        "papers_per_author_cap": PAPERS_PER_AUTHOR_CAP,
+        "doi_to_idx": doi_to_idx,
+        "papers": paper_meta,
+    }
+    paper_idx_path = out_dir / "paper_index.json"
+    paper_idx_path.write_text(json.dumps(paper_idx_doc, allow_nan=False, separators=(",", ":")))
+    print(f"[rev] wrote {paper_idx_path}  "
+          f"({paper_idx_path.stat().st_size/(1024*1024):.1f} MB)", flush=True)
     return 0
 
 

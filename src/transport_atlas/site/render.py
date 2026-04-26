@@ -71,7 +71,8 @@ def run() -> dict:
                  "trajectory_taxonomy.json", "collab_style.json",
                  "author_personality.json",
                  "semantic_communities.json", "combined_communities.json",
-                 "reviewer_index.json", "reviewer_authors.bin"]:
+                 "reviewer_index.json", "reviewer_authors.bin",
+                 "paper_index.json", "paper_emb.bin"]:
         src = processed / name
         if src.exists():
             shutil.copy2(src, data_dst / name)
