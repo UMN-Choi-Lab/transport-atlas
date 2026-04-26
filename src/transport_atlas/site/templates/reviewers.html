@@ -726,9 +726,36 @@ function renderResults(ranked, distMap, parentMap, title, targetVenue, evidenceE
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────
+function cleanLatex(s) {
+  // Strip LaTeX so SPECTER2 sees the actual prose, not markup. Removes:
+  //   - whole-line comments starting with %  (with leading whitespace)
+  //   - inline comments after a non-escaped %
+  //   - \command{body} → body  (keeps content, drops wrapper, repeated for nested)
+  //   - bare \command (no args) → ""
+  //   - \url{...} → URL inside (kept; it's a real reference)
+  //   - \\ (line break) → space
+  //   - $...$ math → kept as-is (SPECTER2 handles unicode/math poorly anyway, but
+  //     dropping it could remove meaningful equations from technical abstracts)
+  if (!s) return "";
+  let out = s;
+  out = out.replace(/^[ \t]*%.*$/gm, "");                 // whole-line comments
+  out = out.replace(/(?<!\\)%.*$/gm, "");                  // inline comments (% not preceded by \)
+  out = out.replace(/\\\\/g, " ");                          // \\ line break
+  // Repeatedly unwrap \command{body} → body so nested commands collapse
+  for (let i = 0; i < 5; i++) {
+    const before = out;
+    out = out.replace(/\\[a-zA-Z]+\*?\s*\{([^{}]*)\}/g, "$1");
+    if (out === before) break;
+  }
+  out = out.replace(/\\[a-zA-Z]+\*?/g, "");                 // bare \command
+  out = out.replace(/[\{\}]/g, " ");                        // stray braces
+  out = out.replace(/\s+/g, " ").trim();
+  return out;
+}
+
 $("#rev-go").addEventListener("click", async () => {
-  const title = $("#rev-title").value.trim();
-  const abstract = $("#rev-abstract").value.trim();
+  const title = cleanLatex($("#rev-title").value.trim());
+  const abstract = cleanLatex($("#rev-abstract").value.trim());
   if (!title && !abstract) { setStatus("Enter a title and/or abstract.", "err"); return; }
   const submitter = $("#rev-submitter").value.trim();
   const refsText = $("#rev-refs").value;
@@ -747,9 +774,20 @@ $("#rev-go").addEventListener("click", async () => {
     tic("loadModel"); await loadModel(); toc("loadModel");
 
     tic("embed"); setStatus("Embedding query ...");
-    const text = abstract ? `${title}[SEP]${abstract}` : title;
-    // SPECTER2: [CLS] pooling, no normalize (we'll L2 norm manually).
-    const out = await extractor(text, { pooling: "cls", normalize: false });
+    // SPECTER2 has a 512-token cap. Long abstracts with LaTeX markup blow past it
+    // and surface as `OrtRun error code 6` (runtime exception). Strip LaTeX
+    // comments/commands and cap to a safe character budget before tokenizing.
+    // ~3.5 chars/token is a safe English heuristic; cap to 1700 chars (~485 tokens
+    // after the title+SEP overhead) so we never collide with the 512 ceiling.
+    const MAX_QUERY_CHARS = 1700;
+    let text = abstract ? `${title}[SEP]${abstract}` : title;
+    if (text.length > MAX_QUERY_CHARS) {
+      text = text.slice(0, MAX_QUERY_CHARS);
+      console.warn(`[rev] query truncated to ${MAX_QUERY_CHARS} chars to fit SPECTER2 512-token cap`);
+    }
+    // SPECTER2: [CLS] pooling, no normalize (we'll L2 norm manually). truncation:true
+    // is a belt-and-suspenders fallback if our char-budget heuristic is off.
+    const out = await extractor(text, { pooling: "cls", normalize: false, truncation: true });
     const raw = out.data;   // Float32Array length 768
     if (raw.length !== EMBED_DIM) throw new Error(`query dim ${raw.length} != ${EMBED_DIM}`);
     // L2 normalize
