@@ -27,6 +27,7 @@ PAGES = [
     ("coauthor_network.html", "coauthor", "coauthor_network.html"),
     ("topic_space.html", "topic", "topic_space.html"),
     ("trajectories.html", "trajectories", "trajectories.html"),
+    ("collab_style.html", "collab_style", "collab_style.html"),
     ("combined.html", "combined", "combined.html"),
     ("reviewers.html", "reviewers", "reviewers.html"),
 ]
@@ -66,7 +67,7 @@ def run() -> dict:
     for name in ["papers.json", "by_year.json", "coauthor_network.json", "top_hubs.json",
                  "author_rankings.json", "venue_stats.json",
                  "topic_coords.json", "author_similar.json", "author_trajectories.json",
-                 "trajectory_taxonomy.json",
+                 "trajectory_taxonomy.json", "collab_style.json",
                  "semantic_communities.json", "combined_communities.json",
                  "reviewer_index.json", "reviewer_authors.bin"]:
         src = processed / name

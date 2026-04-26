@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Collaboration Style — Transport Atlas{% endblock %}
+
+{% block content %}
+<style>
+  #cs-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+              gap: 12px; margin-bottom: 16px; }
+  .cs-stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+             padding: 12px 14px; }
+  .cs-stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cs-stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                letter-spacing: 0.4px; margin-top: 2px; }
+  #cs-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; }
+  @media (max-width: 1100px) { #cs-layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+           padding: 14px; }
+  .panel h2 { margin: 0 0 6px; font-size: 15px; }
+  .panel .sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  #hist-wrap { height: 280px; }
+  #cs-table { font-size: 12.5px; }
+  .help { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.55; }
+</style>
+
+<h1 style="font-size: 22px; margin: 0 0 4px;">Collaboration Style</h1>
+<p class="sub" style="color: var(--muted); margin: 0 0 14px; font-size: 13px;">
+  For each author, the fraction of their coauthors who sit in the same
+  semantic-Leiden community. High values = topical homophily (an author
+  collaborates within their own subfield); low values = topical brokerage
+  (the author bridges disjoint subfields). Lift is the homophily score
+  divided by the chance baseline (the rate at which two random authors
+  share a semantic community).
+</p>
+
+<div id="cs-stats">
+  <div class="cs-stat"><div class="n" id="stat-n">—</div><div class="l">Authors scored</div></div>
+  <div class="cs-stat"><div class="n" id="stat-median">—</div><div class="l">Median homophily</div></div>
+  <div class="cs-stat"><div class="n" id="stat-baseline">—</div><div class="l">Chance baseline</div></div>
+  <div class="cs-stat"><div class="n" id="stat-lift">—</div><div class="l">Median lift over baseline</div></div>
+  <div class="cs-stat"><div class="n" id="stat-above">—</div><div class="l">Above baseline</div></div>
+</div>
+
+<div id="cs-layout">
+  <div class="panel">
+    <h2>Distribution</h2>
+    <div class="sub">Homophily scores binned in steps of 0.05.</div>
+    <div id="hist-wrap"><canvas id="hist"></canvas></div>
+    <div class="help">
+      The dashed line marks the chance baseline. Mass to the right of the
+      line is excess homophily — most authors collaborate far more within
+      their semantic community than chance predicts. Mass to the left
+      identifies topical brokers.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Per-author scores</h2>
+    <div class="sub">Sortable. Click a column header to re-rank. Search filters by name.</div>
+    <div id="cs-table"></div>
+    <div class="help">
+      Default sort is by homophily descending. Click <em>Lift</em> to
+      see who most over-indexes on their own subfield. Click ↑ on
+      homophily to find topical brokers (lowest values).
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.5/js/tabulator.min.js"></script>
+<script>
+const PAGE = "collab_style";
+fetch("data/collab_style.json?v={{ cache_bust }}").then(r => r.json()).then(payload => {
+  const summary = payload.summary;
+  const authors = payload.authors;
+
+  document.getElementById("stat-n").textContent = summary.n_authors_scored.toLocaleString();
+  document.getElementById("stat-median").textContent = (summary.median_homophily * 100).toFixed(1) + "%";
+  document.getElementById("stat-baseline").textContent = (summary.global_baseline * 100).toFixed(1) + "%";
+  document.getElementById("stat-lift").textContent = "×" + summary.median_lift.toFixed(1);
+  document.getElementById("stat-above").textContent = (summary.fraction_above_baseline * 100).toFixed(1) + "%";
+
+  // Histogram
+  const nBins = 20;
+  const bins = new Array(nBins).fill(0);
+  for (const a of authors) {
+    const i = Math.min(nBins - 1, Math.floor(a.homophily * nBins));
+    bins[i] += 1;
+  }
+  const labels = bins.map((_, i) => ((i + 0.5) / nBins).toFixed(2));
+  const baseIx = Math.min(nBins - 1, Math.floor(summary.global_baseline * nBins));
+
+  const ctx = document.getElementById("hist").getContext("2d");
+  new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Authors",
+        data: bins,
+        backgroundColor: bins.map((_, i) => i < baseIx ? "#d55e00" : "#1f77b4"),
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { title: items => `Homophily ≈ ${items[0].label}` } },
+        annotation: undefined,
+      },
+      scales: {
+        x: { title: { display: true, text: "Topical homophily (fraction of coauthors in same semantic community)" } },
+        y: { title: { display: true, text: "Authors" }, beginAtZero: true },
+      },
+    },
+  });
+
+  // Tabulator
+  new Tabulator("#cs-table", {
+    data: authors,
+    layout: "fitColumns",
+    pagination: true,
+    paginationSize: 25,
+    initialSort: [{ column: "homophily", dir: "desc" }],
+    columns: [
+      { title: "Author", field: "name", widthGrow: 3,
+        headerFilter: "input", headerFilterPlaceholder: "search…" },
+      { title: "Homophily", field: "homophily", widthGrow: 1,
+        formatter: (c) => (c.getValue() * 100).toFixed(1) + "%",
+        sorter: "number" },
+      { title: "Lift", field: "lift", widthGrow: 1,
+        formatter: (c) => c.getValue() != null ? "×" + c.getValue().toFixed(1) : "—",
+        sorter: "number" },
+      { title: "Coauthors", field: "n_coauthors", widthGrow: 1, sorter: "number" },
+      { title: "Papers", field: "n_papers", widthGrow: 1, sorter: "number" },
+      { title: "Citations", field: "citations", widthGrow: 1, sorter: "number",
+        formatter: (c) => (c.getValue() || 0).toLocaleString() },
+      { title: "Sem. comm.", field: "semantic_community", widthGrow: 1, sorter: "number" },
+    ],
+  });
+}).catch(err => {
+  document.getElementById("cs-layout").innerHTML =
+    `<div class="panel"><h2>Data unavailable</h2><div class="sub">${err}</div></div>`;
+});
+</script>
+{% endblock %}
