@@ -147,6 +147,12 @@
           <option>15</option><option selected>30</option><option>50</option><option>100</option>
         </select>
       </div>
+      <div class="form-row" style="flex:0 1 110px;" title="How many query-similar papers to show in each reviewer's 'Why this match' panel. Also the number checked by the Active-since post-filter.">
+        <label for="rev-evidence-n">Evidence rows</label>
+        <select id="rev-evidence-n">
+          <option>1</option><option selected>3</option><option>5</option><option>10</option>
+        </select>
+      </div>
       <div class="form-row" style="flex:0 1 140px;">
         <label for="rev-coi-hops">Exclude COI ≤ hops</label>
         <select id="rev-coi-hops">
@@ -265,6 +271,31 @@ if (refsAlphaInput) {
   });
 }
 
+// Evidence count live re-paint: changing the dropdown re-renders all already-
+// fetched evidence rows in place (no re-query). Also resets the recency
+// post-filter visibility because the recency check operates on the top-N
+// slice and a wider/narrower N can change which rows pass.
+const evidenceNInput = $("#rev-evidence-n");
+if (evidenceNInput) {
+  evidenceNInput.addEventListener("change", () => {
+    _evidenceTopN = parseInt(evidenceNInput.value, 10) || 3;
+    if (!evidenceState || evidenceState.size === 0) return;
+    // Un-hide every row so the recency filter can re-decide from scratch.
+    for (const tr of document.querySelectorAll("tr.evidence-row")) {
+      tr.style.display = "";
+      const reviewerTr = tr.previousElementSibling;
+      if (reviewerTr) reviewerTr.style.display = "";
+    }
+    _recencyHidden = 0;
+    _recencyVisible = _recencyTotal;
+    paintRecencyCount();
+    // Re-paint each row that already has evidence (will re-trigger the post-filter).
+    for (const [aIdx, state] of evidenceState.entries()) {
+      if (state.evidence) paintEvidenceRow(aIdx, state.evidence);
+    }
+  });
+}
+
 async function loadIndex() {
   if (INDEX) return;
   setStatus("Loading reviewer index (~10–25 MB) ...");
@@ -336,6 +367,12 @@ async function fetchPaperRows(pidxs) {
   return out;
 }
 
+// ── Evidence display knob (live-adjustable) ──────────────────────────────
+// How many "Why this match" rows to show per reviewer, and how many to check
+// against the recency post-filter. Default 3; user can change via dropdown
+// and the table re-paints in place without a re-query.
+let _evidenceTopN = 3;
+
 // ── Per-query recency post-filter state ──────────────────────────────────
 // When activeSince > 0, after a row's evidence loads we check whether its
 // top-3 query-similar papers include one with year >= activeSince. If not,
@@ -368,8 +405,8 @@ function applyRecencyPostFilter(authorIdx, evidence) {
   // Returns true if the row was hidden, false otherwise.
   if (_recencyThreshold <= 0 || !PAPER_INDEX) return false;
   if (!evidence || !evidence.length) return false;
-  const top3 = evidence.slice(0, 3);
-  for (const ev of top3) {
+  const topN = evidence.slice(0, _evidenceTopN);
+  for (const ev of topN) {
     const meta = PAPER_INDEX.papers[ev.pidx];
     if (meta && meta.y != null && meta.y >= _recencyThreshold) return false;
   }
@@ -692,11 +729,11 @@ function renderCoiCell(idx, distMap, parentMap) {
 }
 
 function renderEvidenceItems(evidence) {
-  // Render the <li> contents for the top-3 papers (or a friendly empty message).
+  // Render the <li> contents for the top-N papers (or a friendly empty message).
   if (!evidence || !evidence.length) {
     return `<li style="color:var(--muted);list-style:none;margin-left:-12px;">No indexed papers above the per-author cap to score.</li>`;
   }
-  return evidence.slice(0, 3).map(({ pidx, score }) => {
+  return evidence.slice(0, _evidenceTopN).map(({ pidx, score }) => {
     const meta = PAPER_INDEX.papers[pidx];
     const title = meta && meta.t ? meta.t : "(untitled)";
     const year = meta && meta.y ? meta.y : "";
@@ -735,7 +772,7 @@ function paintEvidenceRow(authorIdx, evidence, errMsg) {
     if (status) status.textContent = `unavailable (${errMsg})`;
     return;
   }
-  const n = evidence ? Math.min(3, evidence.length) : 0;
+  const n = evidence ? Math.min(_evidenceTopN, evidence.length) : 0;
   if (status) {
     status.textContent = `${n} most-similar paper${n === 1 ? "" : "s"}`;
   }
@@ -828,6 +865,7 @@ $("#rev-go").addEventListener("click", async () => {
   const activeSince = parseInt($("#rev-active-since").value, 10) || 0;
   const targetVenue = $("#rev-venue").value || "";
   const VENUE_BOOST = 0.05;
+  _evidenceTopN = parseInt($("#rev-evidence-n").value, 10) || 3;
 
   $("#rev-go").disabled = true;
   const T = {};                // stage: { start, ms } timings
