@@ -155,7 +155,7 @@
           <option value="2" selected>2 (direct + co-coauthor)</option>
         </select>
       </div>
-      <div class="form-row" style="flex:0 1 130px;" title="Filters to authors whose representative-work list (their top-30 atlas papers by relevance to their own profile) includes at least one paper since the cutoff. Excludes authors whose only recent activity is on unrelated topics.">
+      <div class="form-row" style="flex:0 1 130px;" title="Two-stage recency filter. Pre-filter (fast): excludes authors whose representative-work list has no paper since the cutoff. Post-filter (strict, applied as evidence loads): hides authors whose top-3 query-similar papers are all older than the cutoff. The strict filter is what answers 'do they have a paper similar to MY query since YYYY?'">
         <label for="rev-active-since">Active since</label>
         <select id="rev-active-since">
           <option value="0" selected>(any)</option>
@@ -176,7 +176,7 @@
   </div>
 
   <div class="panel" id="rev-results-panel" style="display:none;">
-    <h2>Top reviewers <span class="sub" id="rev-result-count"></span></h2>
+    <h2>Top reviewers <span class="sub" id="rev-result-count"></span><span class="sub" id="rev-recency-info" style="color:#b91c1c;"></span></h2>
     <div class="sub">
       Score is cosine of query × author centroid (range −1…1; transportation papers usually 0.5–0.9 to a good match).
       Click an author's name to open their atlas profile (coauthor network, focused).
@@ -334,6 +334,55 @@ async function fetchPaperRows(pidxs) {
     out.set(pidx, vec);
   }
   return out;
+}
+
+// ── Per-query recency post-filter state ──────────────────────────────────
+// When activeSince > 0, after a row's evidence loads we check whether its
+// top-3 query-similar papers include one with year >= activeSince. If not,
+// the row is hidden. This is the strict semantic the editor actually wants:
+// "does this reviewer have a paper SIMILAR TO THIS QUERY since YYYY?"
+let _recencyThreshold = 0;
+let _recencyHidden = 0;
+let _recencyVisible = 0;
+let _recencyTotal = 0;
+
+function resetRecencyState(threshold, total) {
+  _recencyThreshold = threshold || 0;
+  _recencyHidden = 0;
+  _recencyVisible = total;
+  _recencyTotal = total;
+  paintRecencyCount();
+}
+
+function paintRecencyCount() {
+  const el = $("#rev-recency-info");
+  if (!el) return;
+  if (_recencyThreshold <= 0 || _recencyHidden === 0) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = `  · ${_recencyHidden} hidden (no query-similar paper since ${_recencyThreshold})`;
+}
+
+function applyRecencyPostFilter(authorIdx, evidence) {
+  // Returns true if the row was hidden, false otherwise.
+  if (_recencyThreshold <= 0 || !PAPER_INDEX) return false;
+  if (!evidence || !evidence.length) return false;
+  const top3 = evidence.slice(0, 3);
+  for (const ev of top3) {
+    const meta = PAPER_INDEX.papers[ev.pidx];
+    if (meta && meta.y != null && meta.y >= _recencyThreshold) return false;
+  }
+  // No recent query-similar paper — hide both rows for this author.
+  const evidenceTr = document.querySelector(`tr.evidence-row[data-aidx="${authorIdx}"]`);
+  if (!evidenceTr) return false;
+  const reviewerTr = evidenceTr.previousElementSibling;
+  if (reviewerTr) reviewerTr.style.display = "none";
+  evidenceTr.style.display = "none";
+  _recencyHidden++;
+  _recencyVisible--;
+  paintRecencyCount();
+  return true;
 }
 
 // ── Per-author evidence: lazy + opportunistic background prefetch ────────
@@ -694,6 +743,9 @@ function paintEvidenceRow(authorIdx, evidence, errMsg) {
     ul.innerHTML = renderEvidenceItems(evidence);
     ul.style.display = "";
   }
+  // Strict recency post-filter: if active_since is set and none of the top-3
+  // evidence papers are recent enough, hide the entire row.
+  applyRecencyPostFilter(authorIdx, evidence);
 }
 
 function renderResults(ranked, distMap, parentMap, title, targetVenue, evidenceEnabled) {
@@ -932,6 +984,10 @@ $("#rev-go").addEventListener("click", async () => {
     renderResults(ranked, distMap, parentMap, title || abstract, targetVenue, evidenceEnabled);
     toc("render");
 
+    // Reset recency post-filter state for this query. paintEvidenceRow will
+    // call applyRecencyPostFilter as each row's evidence becomes available.
+    resetRecencyState(activeSince, ranked.length);
+
     // Kick off background prefetch (fire-and-forget). Update the result-count
     // line as rows finish so the user can watch progress without DevTools.
     if (evidenceEnabled) {
@@ -996,7 +1052,7 @@ $("#rev-go").addEventListener("click", async () => {
     }
     if (activeSince > 0) {
       const basis = piForFilter ? "representative-work years" : "author last_year (paper_index unavailable)";
-      parts.push(`Active-since ${activeSince} (${basis}): skipped ${nDormantSkipped} dormant author(s).`);
+      parts.push(`Active-since ${activeSince}: pre-filter (${basis}) skipped ${nDormantSkipped}; post-filter hides rows whose top-3 query-similar papers are all older as evidence loads.`);
     }
     if (evidenceError) {
       parts.push(`Evidence panels disabled (${evidenceError}). Reviewers ranked by author centroid only.`);
