@@ -155,7 +155,7 @@
           <option value="2" selected>2 (direct + co-coauthor)</option>
         </select>
       </div>
-      <div class="form-row" style="flex:0 1 130px;" title="Drops authors whose most recent indexed paper is older than the cutoff. Recently active authors are more likely to accept review invitations.">
+      <div class="form-row" style="flex:0 1 130px;" title="Filters to authors whose representative-work list (their top-30 atlas papers by relevance to their own profile) includes at least one paper since the cutoff. Excludes authors whose only recent activity is on unrelated topics.">
         <label for="rev-active-since">Active since</label>
         <select id="rev-active-since">
           <option value="0" selected>(any)</option>
@@ -783,6 +783,14 @@ $("#rev-go").addEventListener("click", async () => {
   const toc = (name) => { T[name].ms = performance.now() - T[name].start; };
   try {
     tic("loadIndex"); await loadIndex(); toc("loadIndex");
+    // Kick off paper_index load in parallel with the model — the active-since
+    // filter needs per-paper years from PAPER_INDEX, and evidence prefetch
+    // needs the full doc, so we want it warm by the time we reach either.
+    tic("loadPaperIndex");
+    const piLoadPromise = loadPaperIndex().then(
+      () => { toc("loadPaperIndex"); return PAPER_INDEX; },
+      (err) => { toc("loadPaperIndex"); console.warn("[rev] paper_index load failed:", err); return null; },
+    );
     tic("loadModel"); await loadModel(); toc("loadModel");
 
     tic("embed"); setStatus("Embedding query ...");
@@ -864,17 +872,37 @@ $("#rev-go").addEventListener("click", async () => {
       for (const [idx, d] of distMap) if (d <= coiMaxHops) exclude.add(idx);
     }
 
+    // Wait for paper_index if the filter needs it. Falls back to author.y if
+    // the load failed.
+    let piForFilter = null;
+    if (activeSince > 0) piForFilter = await piLoadPromise;
+
     // Rank: argsort scores desc, skip excluded + dormant authors.
+    // Recency rule: an author is "active" if their representative-work list
+    // (`pi`, top-30 papers by author-centroid relevance) contains at least one
+    // paper with year >= activeSince. This avoids passing authors whose only
+    // recent work is on an unrelated topic.
     const idxs = Array.from(scores.keys());
     idxs.sort((a, b) => scores[b] - scores[a]);
     const ranked = [];
     let nDormantSkipped = 0;
+    const isActive = (authorIdx) => {
+      if (activeSince <= 0) return true;
+      const a = INDEX.authors[authorIdx];
+      if (piForFilter && a.pi && a.pi.length) {
+        for (const p of a.pi) {
+          const meta = piForFilter.papers[p];
+          if (meta && meta.y != null && meta.y >= activeSince) return true;
+        }
+        return false;
+      }
+      // Fallback: author.last_year if paper_index isn't available
+      const ly = a.y;
+      return ly != null && ly >= activeSince;
+    };
     for (const idx of idxs) {
       if (exclude.has(idx)) continue;
-      if (activeSince > 0) {
-        const ly = INDEX.authors[idx].y;
-        if (ly == null || ly < activeSince) { nDormantSkipped++; continue; }
-      }
+      if (!isActive(idx)) { nDormantSkipped++; continue; }
       ranked.push({ idx, score: scores[idx] });
       if (ranked.length >= topN) break;
     }
@@ -967,7 +995,8 @@ $("#rev-go").addEventListener("click", async () => {
       parts.push("No authors entered — COI filter off.");
     }
     if (activeSince > 0) {
-      parts.push(`Active-since ${activeSince}: skipped ${nDormantSkipped} dormant author(s) earlier in the rank.`);
+      const basis = piForFilter ? "representative-work years" : "author last_year (paper_index unavailable)";
+      parts.push(`Active-since ${activeSince} (${basis}): skipped ${nDormantSkipped} dormant author(s).`);
     }
     if (evidenceError) {
       parts.push(`Evidence panels disabled (${evidenceError}). Reviewers ranked by author centroid only.`);
