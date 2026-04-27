@@ -155,6 +155,17 @@
           <option value="2" selected>2 (direct + co-coauthor)</option>
         </select>
       </div>
+      <div class="form-row" style="flex:0 1 130px;" title="Drops authors whose most recent indexed paper is older than the cutoff. Recently active authors are more likely to accept review invitations.">
+        <label for="rev-active-since">Active since</label>
+        <select id="rev-active-since">
+          <option value="0" selected>(any)</option>
+          <option value="2018">2018+</option>
+          <option value="2020">2020+</option>
+          <option value="2022">2022+</option>
+          <option value="2024">2024+</option>
+          <option value="2025">2025+</option>
+        </select>
+      </div>
       <div class="form-row" style="flex:0 0 auto;">
         <label>&nbsp;</label>
         <button id="rev-go"{% if specter2_is_default %} disabled{% endif %}>Find reviewers</button>
@@ -762,6 +773,7 @@ $("#rev-go").addEventListener("click", async () => {
   const refsAlpha = parseFloat($("#rev-refs-alpha").value);
   const topN = parseInt($("#rev-topn").value, 10) || 30;
   const coiMaxHops = parseInt($("#rev-coi-hops").value, 10) || 0;
+  const activeSince = parseInt($("#rev-active-since").value, 10) || 0;
   const targetVenue = $("#rev-venue").value || "";
   const VENUE_BOOST = 0.05;
 
@@ -852,12 +864,17 @@ $("#rev-go").addEventListener("click", async () => {
       for (const [idx, d] of distMap) if (d <= coiMaxHops) exclude.add(idx);
     }
 
-    // Rank: argsort scores desc, skip excluded.
+    // Rank: argsort scores desc, skip excluded + dormant authors.
     const idxs = Array.from(scores.keys());
     idxs.sort((a, b) => scores[b] - scores[a]);
     const ranked = [];
+    let nDormantSkipped = 0;
     for (const idx of idxs) {
       if (exclude.has(idx)) continue;
+      if (activeSince > 0) {
+        const ly = INDEX.authors[idx].y;
+        if (ly == null || ly < activeSince) { nDormantSkipped++; continue; }
+      }
       ranked.push({ idx, score: scores[idx] });
       if (ranked.length >= topN) break;
     }
@@ -948,6 +965,9 @@ $("#rev-go").addEventListener("click", async () => {
       parts.push(`None of ${authorTokens.length} author(s) matched the atlas — no COI filter applied.`);
     } else {
       parts.push("No authors entered — COI filter off.");
+    }
+    if (activeSince > 0) {
+      parts.push(`Active-since ${activeSince}: skipped ${nDormantSkipped} dormant author(s) earlier in the rank.`);
     }
     if (evidenceError) {
       parts.push(`Evidence panels disabled (${evidenceError}). Reviewers ranked by author centroid only.`);
