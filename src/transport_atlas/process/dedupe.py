@@ -57,16 +57,33 @@ log = get_logger("dedupe")
 
 
 def _norm_title(t: str | None) -> str:
-    if not t:
+    # NB: a DataFrame NaN arrives as float('nan'), and bool(nan) is True, so
+    # `if not t` lets it through to .lower(). Guard on the type instead.
+    if not isinstance(t, str):
         return ""
     s = t.lower()
     s = re.sub(r"[^a-z0-9 ]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _clean_doi(v) -> str | None:
+    """Normalize a DOI cell to a real DOI or None.
+
+    Guards against the literal string "nan"/"none"/"" that pandas can introduce
+    when None-valued object columns are round-tripped through DataFrame ops — a
+    truthy "nan" would otherwise make _paper_id emit a single shared "doi:nan"
+    id and collapse every DOI-less paper into one row.
+    """
+    if isinstance(v, str):
+        s = v.strip().lower()
+        return s if s and s not in ("nan", "none") else None
+    return None
+
+
 def _paper_id(doi: str | None, title: str | None, year: int | None) -> str:
-    if doi:
-        return f"doi:{doi}"
+    d = _clean_doi(doi)
+    if d:
+        return f"doi:{d}"
     key = f"{_norm_title(title)}|{year}"
     return "h:" + hashlib.sha1(key.encode()).hexdigest()[:16]
 
@@ -98,6 +115,9 @@ def _load_all(venues: list[dict]) -> pd.DataFrame:
     if df.empty:
         return df
     df["doi"] = df["doi"].astype("object").where(df["doi"].notna(), None)
+    # Coalesce null titles to "" so no downstream stage hits a float NaN
+    # (dedup key, front-matter filter, aggregate's allow_nan=False JSON, graph).
+    df["title"] = df["title"].astype("object").where(df["title"].notna(), "")
     df["title_norm"] = df["title"].map(_norm_title)
     df["year"] = df["year"].astype("Int64")
     # Filter front-matter (Editorial, TOC, etc.) — they inflate hubs + pollute topics
@@ -201,6 +221,10 @@ def run(*, write: bool = True) -> dict:
     for cid, grp in pd.concat([with_doi, without_doi]).groupby("cluster_id"):
         merged_rows.append(_merge_records(grp))
     papers = pd.DataFrame(merged_rows)
+    # Sanitize doi back to real-DOI-or-None: merging None-valued cells through
+    # DataFrame ops can leave the literal string "nan", which would both poison
+    # the paper_id and ship a bogus "nan" DOI to the site.
+    papers["doi"] = papers["doi"].map(_clean_doi)
     papers["paper_id"] = papers.apply(
         lambda r: _paper_id(r.get("doi"), r.get("title"), r.get("year")), axis=1
     )
