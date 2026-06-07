@@ -27,6 +27,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN="${REPO_ROOT}/docker/run_embed.sh"
 GHPAGES="/home/chois/gitsrcs/choi-seongjin.github.io"
 DEST="${GHPAGES}/transport-atlas/"
+# Heavy data files (data/*.json|bin) live in a separate same-origin Pages repo
+# (choi-seongjin.github.io/transport-atlas-data/) that is force-reset to a single
+# commit each deploy, so neither repo accumulates binary git bloat.
+DATA_REPO="/home/chois/gitsrcs/transport-atlas-data"
+DATA_REMOTE="git@github.com:choi-seongjin/transport-atlas-data.git"
 
 DEPLOY=0
 # GPU: honour an explicit GPU=N, else auto-pick the device with the most free
@@ -85,17 +90,31 @@ step "7/7 render static site"
 "$RUN" render
 
 if [ "$DEPLOY" -eq 1 ]; then
-  step "deploy -> gh-pages (Jekyll source branch; built by GitHub Actions)"
-  # origin/gh-pages is now an Actions/Jekyll SOURCE branch and its history was
-  # force-rewritten, so the local copy can be diverged. The remote is
-  # authoritative: hard-sync to it, then update only the transport-atlas/ subdir
-  # and push (which triggers the Actions Jekyll build). We never force-push.
+  # --- 1. Data repo: heavy files, force-reset to ONE commit (no history => no bloat) ---
+  step "deploy data -> transport-atlas-data (force-reset, single commit)"
+  if [ ! -d "$DATA_REPO/.git" ]; then
+    git clone "$DATA_REMOTE" "$DATA_REPO"
+  fi
+  rsync -a --delete --exclude='.git' "${REPO_ROOT}/site/data/" "$DATA_REPO/"
+  touch "$DATA_REPO/.nojekyll"   # serve raw files (no Jekyll), survives the --delete
+  cd "$DATA_REPO"
+  git checkout -q --orphan _fresh
+  git add -A
+  git -c user.name="Seongjin Choi" -c user.email="benchoi93@gmail.com" \
+      commit -q -m "data $(date +%Y-%m-%d)"
+  git branch -q -D main 2>/dev/null || true
+  git branch -q -m main
+  git push -f origin main
+
+  # --- 2. Main repo: HTML only. Exclude data/, and remove any previously-shipped data/ ---
+  step "deploy site (HTML) -> gh-pages transport-atlas/ (data served from data repo)"
   cd "$GHPAGES"
   git fetch origin gh-pages
   git checkout gh-pages
   git reset --hard origin/gh-pages
-  rsync -av --delete "${REPO_ROOT}/site/" "$DEST"
-  git add transport-atlas/
+  rsync -av --delete --exclude='data' "${REPO_ROOT}/site/" "$DEST"
+  rm -rf "${DEST}data"          # drop the old in-repo data dir if present
+  git add -A transport-atlas/
   if git diff --cached --quiet; then
     echo "no site changes to commit"
   else
@@ -103,7 +122,7 @@ if [ "$DEPLOY" -eq 1 ]; then
     git push origin gh-pages
   fi
 else
-  step "skip deploy (pass --deploy to sync + push to gh-pages)"
+  step "skip deploy (pass --deploy to sync + push to both repos)"
 fi
 
 step "done"

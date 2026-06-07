@@ -373,8 +373,8 @@ document.getElementById('traj-search').addEventListener('input', ev => {
 (async function init() {
   buildLegend();
   const [tax, traj] = await Promise.all([
-    fetch(`data/trajectory_taxonomy.json?v=${cacheBust}`).then(r => r.json()),
-    fetch(`data/author_trajectories.json?v=${cacheBust}`).then(r => r.json()),
+    fetch(`{{ data_base }}/trajectory_taxonomy.json?v=${cacheBust}`).then(r => r.json()),
+    fetch(`{{ data_base }}/author_trajectories.json?v=${cacheBust}`).then(r => r.json()),
   ]);
   TAXONOMY = tax; TRAJ = traj;
   drawScatter();

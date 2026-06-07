@@ -264,7 +264,7 @@ function renderMatrix(mode) {
   }
 }
 
-fetch("data/author_personality.json?v={{ cache_bust }}").then(r => r.json()).then(payload => {
+fetch("{{ data_base }}/author_personality.json?v={{ cache_bust }}").then(r => r.json()).then(payload => {
   const summary = payload.summary;
   const authors = payload.authors;
 

@@ -68,7 +68,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.5/js/tabulator.min.js"></script>
 <script>
 const PAGE = "collab_style";
-fetch("data/collab_style.json?v={{ cache_bust }}").then(r => r.json()).then(payload => {
+fetch("{{ data_base }}/collab_style.json?v={{ cache_bust }}").then(r => r.json()).then(payload => {
   const summary = payload.summary;
   const authors = payload.authors;
 

@@ -300,8 +300,8 @@ async function loadIndex() {
   if (INDEX) return;
   setStatus("Loading reviewer index (~10–25 MB) ...");
   const [jResp, bResp] = await Promise.all([
-    fetch(`data/reviewer_index.json?v=${CACHE_BUST}`),
-    fetch(`data/reviewer_authors.bin?v=${CACHE_BUST}`),
+    fetch(`{{ data_base }}/reviewer_index.json?v=${CACHE_BUST}`),
+    fetch(`{{ data_base }}/reviewer_authors.bin?v=${CACHE_BUST}`),
   ]);
   if (!jResp.ok) throw new Error(`reviewer_index.json: HTTP ${jResp.status}`);
   if (!bResp.ok) throw new Error(`reviewer_authors.bin: HTTP ${bResp.status}`);
@@ -321,7 +321,7 @@ async function loadIndex() {
 async function loadPaperIndex() {
   if (PAPER_INDEX) return;
   setStatus("Loading paper metadata (~10 MB) ...");
-  const r = await fetch(`data/paper_index.json?v=${CACHE_BUST}`);
+  const r = await fetch(`{{ data_base }}/paper_index.json?v=${CACHE_BUST}`);
   if (!r.ok) throw new Error(`paper_index.json: HTTP ${r.status}`);
   PAPER_INDEX = await r.json();
   if (PAPER_INDEX.dim !== EMBED_DIM) {
@@ -344,7 +344,7 @@ async function fetchPaperRows(pidxs) {
   }
   if (!fresh.length) return out;
   // Issue parallel range requests. HTTP/2 multiplexes; browser handles concurrency.
-  const url = `data/paper_emb.bin?v=${CACHE_BUST}`;
+  const url = `{{ data_base }}/paper_emb.bin?v=${CACHE_BUST}`;
   const results = await Promise.all(fresh.map(async (pidx) => {
     const start = pidx * ROW;
     const end = start + ROW - 1;

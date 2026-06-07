@@ -126,7 +126,7 @@ const elInfo = document.getElementById('result-info');
 
 function fmt(n) { return n == null ? '—' : Number(n).toLocaleString(); }
 
-fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rows => {
+fetch(`{{ data_base }}/papers.json?v=${cacheBust}`).then(r => r.json()).then(rows => {
   // ——— Precompute per-venue year ranges + global stats ———
   const venueYears = new Map();   // venue -> {min, max, n}
   let gYmin = Infinity, gYmax = -Infinity;
