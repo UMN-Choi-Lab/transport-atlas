@@ -19,27 +19,46 @@ Per-view URLs (same pattern for every rendered page in `site/`):
 ### Repositories
 
 - **Code (this dir)**: `git@github.com:UMN-Choi-Lab/transport-atlas.git` — Python pipeline, templates, scripts, configs. Does **not** contain the built site or any data files (see `.gitignore`).
-- **Deployed site**: `/home/chois/gitsrcs/choi-seongjin.github.io/` (repo `git@github.com:choi-seongjin/choi-seongjin.github.io.git`, branch `gh-pages`). GitHub Pages serves `transport-atlas/` subdir under the user site.
+- **Deployed site**: `/home/chois/gitsrcs/choi-seongjin.github.io/` (repo `git@github.com:choi-seongjin/choi-seongjin.github.io.git`, branch `gh-pages`). **As of 2026-06, `gh-pages` is a Jekyll site SOURCE branch built + deployed by GitHub Actions** (`.github/workflows/jekyll.yml`, `_config.yml`, `Gemfile` at repo root); `transport-atlas/` is a static subdir Jekyll copies through. The branch history was force-rewritten in the redesign, so a local clone can be badly diverged — **the remote is authoritative**.
 
 ### Deploy flow (end-to-end)
 
+The scheduled job and manual deploys both use the same flow. Easiest is the orchestrator:
+
 ```bash
-# 1. Rebuild the site (picks up template + data changes)
-python3 scripts/04_render.py                         # emits site/*.html with new cacheBust
+# Full refresh (ingest → corpus → embed → similarity → reviewer → render) + deploy.
+# Runs every stage in the transport-atlas-embed Docker image; auto-picks a free GPU.
+./scripts/scheduled_update.sh --deploy
+```
 
-# 2. Sync into the GH Pages repo
-rsync -av --delete site/ /home/chois/gitsrcs/choi-seongjin.github.io/transport-atlas/
+To deploy an already-built `site/` by hand, mirror what the script's deploy step does
+(NEVER `rsync → push` against the old direct-serve assumption; NEVER force-push):
 
-# 3. Commit + push (gh-pages branch)
+```bash
+# 1. Rebuild if needed: ./docker/run_embed.sh render   (emits site/*.html with new cacheBust)
+# 2. Hard-sync local gh-pages to the authoritative remote (Jekyll source):
 cd /home/chois/gitsrcs/choi-seongjin.github.io
-git add transport-atlas/
-git commit -m "transport-atlas: <what changed>"
+git fetch origin gh-pages && git checkout gh-pages && git reset --hard origin/gh-pages
+# 3. Sync ONLY the transport-atlas/ subdir, then commit + push (triggers the Actions build):
+rsync -a --delete /home/chois/gitsrcs/transportation/site/ transport-atlas/
+git add transport-atlas/ && git commit -m "transport-atlas: <what changed>"
 git push origin gh-pages
 ```
 
-GitHub Pages CDN usually propagates in ~1 min; hard-reload to bypass browser cache since HTML files are served without `?v=` cache-bust.
+After the push, the **GitHub Actions "Deploy site to Pages" run** (watch with `gh run list --branch gh-pages`) builds Jekyll and publishes; live in ~1–3 min. Hard-reload to bypass browser cache.
 
-**Partial deploys**: if a background job is still updating `site/data/`, deploy only the HTML files with `rsync -av site/*.html <dest>/` to avoid disturbing the in-progress data output.
+### Scheduled updates
+
+A weekly cron runs the full refresh + deploy: `0 11 * * 1` (Mon 06:00 America/Chicago) →
+`scripts/scheduled_update.sh --deploy`, logging to `data/processed/_cron.log`. Cadence + the
+front-page "Updated weekly" note are driven by `config/pipeline.yaml` `update:`. The job does a
+**full OpenAlex re-pull** (not an `--incremental` publication-date window): OpenAlex's
+`publication_date` is unreliable (placeholder Jan-1 / preprint dates) and `from_created_date`
+is premium-gated, so a date window silently misses re-associated / preprint-promoted papers.
+
+> ⚠️ **gh-pages bloat**: the deploy commits regenerated binaries (`transport-atlas/data/paper_emb.bin` ~67 MB, `reviewer_authors.bin` ~31 MB) every run; the repo `.git` is already ~700 MB and grows ~100 MB/week. Proper fix (deferred): host the large `.bin` files as GitHub Release assets (off git history) and point the site JS at the release URLs. Do NOT use git-LFS for these (free 1 GB quota would fail the autonomous cron in ~10 weeks); the existing bloat needs a separate, sign-off-gated history cleanup.
+
+**Partial deploys**: if a background job is still updating `site/data/`, deploy only the HTML files with `rsync -av site/*.html transport-atlas/` to avoid disturbing the in-progress data output.
 
 **Cache-busting `?v=` rule**: data JSONs are referenced as `data/foo.json?v={{ cache_bust }}` in templates, so browsers refetch them whenever the render timestamp changes. Bump the cacheBust by re-running `scripts/04_render.py` — don't hand-edit the string.
 
