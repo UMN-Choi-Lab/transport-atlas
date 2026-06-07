@@ -39,10 +39,14 @@ To deploy an already-built `site/` by hand, mirror what the script's deploy step
 # 2. Hard-sync local gh-pages to the authoritative remote (Jekyll source):
 cd /home/chois/gitsrcs/choi-seongjin.github.io
 git fetch origin gh-pages && git checkout gh-pages && git reset --hard origin/gh-pages
-# 3. Sync ONLY the transport-atlas/ subdir, then commit + push (triggers the Actions build):
-rsync -a --delete /home/chois/gitsrcs/transportation/site/ transport-atlas/
-git add transport-atlas/ && git commit -m "transport-atlas: <what changed>"
+# 3. Sync the transport-atlas/ subdir EXCLUDING data/ (data goes to the data repo — see below),
+#    then commit + push (triggers the Actions build):
+rsync -a --delete --exclude='data' /home/chois/gitsrcs/transportation/site/ transport-atlas/
+rm -rf transport-atlas/data
+git add -A transport-atlas/ && git commit -m "transport-atlas: <what changed>"
 git push origin gh-pages
+# 4. Data files go to the data repo (force-reset to one commit). scripts/scheduled_update.sh
+#    --deploy does both halves; see the "Data repo" section below.
 ```
 
 After the push, the **GitHub Actions "Deploy site to Pages" run** (watch with `gh run list --branch gh-pages`) builds Jekyll and publishes; live in ~1–3 min. Hard-reload to bypass browser cache.
@@ -56,7 +60,18 @@ front-page "Updated weekly" note are driven by `config/pipeline.yaml` `update:`.
 `publication_date` is unreliable (placeholder Jan-1 / preprint dates) and `from_created_date`
 is premium-gated, so a date window silently misses re-associated / preprint-promoted papers.
 
-> ⚠️ **gh-pages bloat**: the deploy commits regenerated binaries (`transport-atlas/data/paper_emb.bin` ~67 MB, `reviewer_authors.bin` ~31 MB) every run; the repo `.git` is already ~700 MB and grows ~100 MB/week. Proper fix (deferred): host the large `.bin` files as GitHub Release assets (off git history) and point the site JS at the release URLs. Do NOT use git-LFS for these (free 1 GB quota would fail the autonomous cron in ~10 weeks); the existing bloat needs a separate, sign-off-gated history cleanup.
+### Data repo (bloat fix, 2026-06)
+
+Heavy data files (`data/*.json|bin`, ~325 MB/deploy) are **not** committed to the
+personal-site repo — they live in a separate repo **`choi-seongjin/transport-atlas-data`**
+published via Pages to **`choi-seongjin.github.io/transport-atlas-data/`** (same host as the
+atlas ⇒ same-origin ⇒ the Range+CORS the reviewer-finder needs; has `.nojekyll` so files serve
+raw). Templates fetch `{{ data_base }}/<file>` (render.py `DATA_BASE`, absolute URL so local
+preview works too). The deploy **force-resets the data repo to a single commit each run**, so
+neither repo accumulates binary git bloat. The one-time history cleanup (`git filter-repo --path
+transport-atlas/data --invert-paths` + force-push) already ran — it took the site repo `.git`
+from 717 MB → 119 MB. GitHub Release assets were ruled out: **they send no CORS headers**, so a
+browser `fetch()` can't read them; git-LFS was ruled out (free 1 GB quota would fail the cron).
 
 **Partial deploys**: if a background job is still updating `site/data/`, deploy only the HTML files with `rsync -av site/*.html transport-atlas/` to avoid disturbing the in-progress data output.
 
