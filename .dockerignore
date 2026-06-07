@@ -1,0 +1,12 @@
+# The embed image bind-mounts the repo at runtime (-v "$REPO_ROOT":/work) and
+# COPYs nothing, so the build context only needs to be small. Exclude the heavy
+# data/site/cache dirs to keep `docker build` fast.
+.git
+data
+site
+.cache
+paper/manuscript
+**/__pycache__
+*.png
+*.parquet
+*.bin

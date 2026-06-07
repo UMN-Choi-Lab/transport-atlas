@@ -2,6 +2,9 @@
 # Run the embed + paper-analysis pipeline in the GPU-enabled Docker image.
 #
 # Pipeline stages:
+#   ./docker/run_embed.sh ingest-full          # scripts/01_ingest.py --force (reliable re-pull)
+#   ./docker/run_embed.sh ingest-recent        # scripts/01_ingest.py --incremental (fast, lossy)
+#   ./docker/run_embed.sh corpus               # 02_dedupe + 03_graph + 03b_annotate
 #   GPU=1 ./docker/run_embed.sh embed          # scripts/05_embed_papers.py
 #   GPU=1 ./docker/run_embed.sh similarity     # scripts/06_author_similarity.py
 #   GPU=1 ./docker/run_embed.sh phantom        # scripts/07_phantom_eval.py (§8)
@@ -53,6 +56,28 @@ CMD="${1:-embed}"
 shift || true
 
 case "$CMD" in
+  ingest-full)
+    # Full OpenAlex re-pull (no date filter). The RELIABLE freshness method on
+    # the free tier: catches whatever is currently associated with each source
+    # ID regardless of (often-placeholder) publication_date. Metadata-only and
+    # cheap; downstream embed is checkpointed so only new papers get embedded.
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/01_ingest.py --source openalex --force "$@"
+    ;;
+  ingest-recent|topup)
+    # FAST APPROXIMATION ONLY — filters from_publication_date, so it MISSES
+    # preprint-promoted / placeholder-dated papers (e.g. an article stamped
+    # 2025-01-01 but actually in a 2026 issue). Use ingest-full for correctness;
+    # this is for cheap daily probes between full re-pulls. Pass-through flags:
+    #   ./docker/run_embed.sh ingest-recent --lookback-days 90 [--dry-run]
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
+      python scripts/01_ingest.py --incremental "$@"
+    ;;
+  corpus)
+    # Rebuild the dedup'd corpus + coauthor graph + annotations from raw ingest.
+    exec docker run "${COMMON_ARGS[@]}" "$IMAGE" bash -c \
+      "python scripts/02_dedupe.py && python scripts/03_graph.py && python scripts/03b_annotate_all_coauthors.py"
+    ;;
   embed)
     exec docker run "${COMMON_ARGS[@]}" "$IMAGE" \
       python scripts/05_embed_papers.py "$@"
@@ -127,7 +152,7 @@ case "$CMD" in
     exec docker run -it "${COMMON_ARGS[@]}" "$IMAGE" bash
     ;;
   *)
-    echo "usage: $0 {embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|annotate|reflag-phantoms|reviewer-index|export-specter2-onnx|render|analysis|shell}" >&2
+    echo "usage: $0 {ingest-full|ingest-recent|corpus|embed|finetune|similarity|both|phantom|descriptive|coauthor|partition|phantom-fig|trajectories|annotate|reflag-phantoms|reviewer-index|export-specter2-onnx|render|analysis|shell}" >&2
     exit 2
     ;;
 esac

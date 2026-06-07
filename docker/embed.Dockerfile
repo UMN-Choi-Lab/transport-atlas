@@ -28,6 +28,10 @@ RUN pip install --no-cache-dir \
     'matplotlib>=3.7' \
     'python-dotenv>=1.0' \
     'optimum[onnxruntime]>=1.20' \
-    'huggingface_hub>=0.24'
+    'huggingface_hub>=0.24' \
+    'requests>=2.31' \
+    'tenacity>=8.2' \
+    'fa2_modified>=0.3.10' \
+    'lxml>=5.0'
 
 WORKDIR /work
