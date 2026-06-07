@@ -85,9 +85,16 @@ step "7/7 render static site"
 "$RUN" render
 
 if [ "$DEPLOY" -eq 1 ]; then
-  step "deploy -> gh-pages"
-  rsync -av --delete "${REPO_ROOT}/site/" "$DEST"
+  step "deploy -> gh-pages (Jekyll source branch; built by GitHub Actions)"
+  # origin/gh-pages is now an Actions/Jekyll SOURCE branch and its history was
+  # force-rewritten, so the local copy can be diverged. The remote is
+  # authoritative: hard-sync to it, then update only the transport-atlas/ subdir
+  # and push (which triggers the Actions Jekyll build). We never force-push.
   cd "$GHPAGES"
+  git fetch origin gh-pages
+  git checkout gh-pages
+  git reset --hard origin/gh-pages
+  rsync -av --delete "${REPO_ROOT}/site/" "$DEST"
   git add transport-atlas/
   if git diff --cached --quiet; then
     echo "no site changes to commit"

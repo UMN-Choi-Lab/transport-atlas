@@ -180,6 +180,13 @@ def run(*, write: bool = True) -> dict:
     out = config.data_dir("processed")
 
     papers = pd.read_parquet(interim / "papers.parquet")
+    # Coalesce nullable string columns to plain object dtype with real None/""
+    # so a parquet null (read back as pd.NA / float NaN under pandas "string"
+    # dtype, which iterrows() surfaces as a float) can't poison sort keys or
+    # allow_nan=False JSON dumps. .map() alone preserves the string dtype and
+    # re-coerces None->NA, so force object dtype the way dedupe does.
+    papers["doi"] = papers["doi"].astype(object).where(papers["doi"].notna(), None)
+    papers["title"] = papers["title"].astype(object).where(papers["title"].notna(), "")
     venues = config.load_venues()
     venue_short = {v["slug"]: v["short"] for v in venues}
     venue_name = {v["slug"]: v["name"] for v in venues}

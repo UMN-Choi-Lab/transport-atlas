@@ -118,6 +118,9 @@ def main() -> int:
 
     # Load papers w/ authors + year + cites
     papers = pd.read_parquet(repo / "data" / "interim" / "papers.parquet")
+    # Parquet nulls under pandas "string" dtype surface as float NaN in iterrows;
+    # coalesce title to object/"" so `(r.get("title") or "").strip()` is safe.
+    papers["title"] = papers["title"].astype(object).where(papers["title"].notna(), "")
     authors_tbl = pd.read_parquet(repo / "data" / "interim" / "authors.parquet")
     print(f"[sim] papers: {len(papers):,}  authors: {len(authors_tbl):,}", flush=True)
 

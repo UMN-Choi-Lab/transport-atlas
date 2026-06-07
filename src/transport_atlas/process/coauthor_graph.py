@@ -442,6 +442,10 @@ def run(*, write: bool = True) -> dict:
     interim = config.data_dir("interim")
     papers = pd.read_parquet(interim / "papers.parquet")
     authors = pd.read_parquet(interim / "authors.parquet")
+    # Parquet nulls read back as pd.NA/float under pandas "string" dtype (which
+    # iterrows surfaces as a float); coalesce title to object dtype with real ""
+    # so the `(r.get("title") or "")` paths never call .strip()/.lower() on a float.
+    papers["title"] = papers["title"].astype(object).where(papers["title"].notna(), "")
 
     (nodes_set, edges_raw, per_author, author_max_year, top_papers, paper_records,
      pair_years, pair_newman, cites_multi, cites_all, n_single_paper) = \
@@ -529,7 +533,10 @@ def run(*, write: bool = True) -> dict:
         cid = node_to_cid.get(k)
         x, y = pos.get(k, (0.0, 0.0))
         m = node_metrics.get(k, {})
-        orcid = info.get("orcid") or None
+        # NB: `info.get("orcid") or None` fails on a float NaN (bool(nan) is True,
+        # so NaN passes through and later breaks allow_nan=False JSON). Guard on type.
+        orcid = info.get("orcid")
+        orcid = orcid if isinstance(orcid, str) and orcid else None
         # If the key itself is an ORCID (author_key fallback), use it directly.
         if not orcid and isinstance(k, str) and len(k) == 19 and k[4] == "-":
             orcid = k
@@ -631,9 +638,11 @@ def run(*, write: bool = True) -> dict:
 
     if write:
         out = config.data_dir("processed")
-        (out / "coauthor_network.json").write_text(json.dumps(payload))
-        (out / "top_hubs.json").write_text(json.dumps(top_hubs))
-        (out / "author_rankings.json").write_text(json.dumps(rankings))
+        # allow_nan=False per project rule: browser JSON.parse rejects NaN/Infinity,
+        # so fail loudly here rather than ship an unparseable file (or trip 03b later).
+        (out / "coauthor_network.json").write_text(json.dumps(payload, allow_nan=False))
+        (out / "top_hubs.json").write_text(json.dumps(top_hubs, allow_nan=False))
+        (out / "author_rankings.json").write_text(json.dumps(rankings, allow_nan=False))
         (out / "_graph_report.json").write_text(json.dumps(report, indent=2))
         old = out / "coauthor_graph.json"
         if old.exists():
