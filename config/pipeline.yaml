@@ -1,5 +1,23 @@
 seed: 1337
 
+# Scheduled-update cadence. `cadence_human` is shown on the site front page;
+# `cadence_cron` is the crontab spec the scheduled job runs on. The scheduled
+# job defaults to a FULL OpenAlex re-pull (no date filter) because OpenAlex's
+# publication_date is unreliable (placeholder Jan-1 dates, preprint dates) and
+# the created/updated-date filters are premium-gated — so a publication-date
+# window silently misses re-associated / preprint-promoted papers. `lookback_days`
+# only applies to the optional --incremental fast-probe mode.
+update:
+  cadence_human: "weekly"
+  cadence_cron: "0 11 * * 1"        # Mondays 11:00 UTC ≈ 06:00 America/Chicago (CST)
+  lookback_days: 90                 # only used by 01_ingest.py --incremental (fast, lossy)
+
+analytics:
+  # GoatCounter site code (subdomain of goatcounter.com). Set to null to disable
+  # tracking + the per-page view-count badge. The public count badge also
+  # requires "Allow public access to the visitor count" in GoatCounter settings.
+  goatcounter_code: transport-atlas
+
 openalex:
   base_url: "https://api.openalex.org"
   per_page: 200
