@@ -281,12 +281,12 @@ metaEl.innerHTML = '<div class="count">Loading…</div><div class="params">fetch
 (async function boot() {
 let DATA, SIMILAR = {};
 try {
-  const res = await fetch(`data/coauthor_network.json?v=${cacheBust}`);
+  const res = await fetch(`{{ data_base }}/coauthor_network.json?v=${cacheBust}`);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   DATA = await res.json();
   // Optional: semantic neighbors (may not exist yet on first ingest). Fail soft.
   try {
-    const r2 = await fetch(`data/author_similar.json?v=${cacheBust}`);
+    const r2 = await fetch(`{{ data_base }}/author_similar.json?v=${cacheBust}`);
     if (r2.ok) SIMILAR = await r2.json();
   } catch {}
 } catch (err) {
@@ -1302,5 +1302,6 @@ document.querySelectorAll('input[name="cmode"]').forEach(r => {
 applyColorMode(colorMode);
 })();
 </script>
+{% include "_analytics.html" %}
 </body>
 </html>

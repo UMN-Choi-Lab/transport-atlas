@@ -111,7 +111,7 @@ function buildDetail(d) {
   </div>`;
 }
 
-fetch(`data/venue_stats.json?v=${cacheBust}`)
+fetch(`{{ data_base }}/venue_stats.json?v=${cacheBust}`)
   .then(r => r.json())
   .then(data => {
     const table = new Tabulator("#table", {
@@ -180,5 +180,6 @@ fetch(`data/venue_stats.json?v=${cacheBust}`)
       `<div style="padding:24px;color:#b00;">Failed to load venue_stats.json: ${err.message}</div>`;
   });
 </script>
+{% include "_analytics.html" %}
 </body>
 </html>

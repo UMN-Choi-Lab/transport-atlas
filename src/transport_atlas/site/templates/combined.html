@@ -189,11 +189,11 @@ metaEl.innerHTML = '<div class="count">Loading…</div><div class="params">fetch
 let DATA, SIMILAR = {}, TC = {}, SEMCOMMS = [], COMBCOMMS = [];
 try {
   [DATA, SIMILAR, TC, SEMCOMMS, COMBCOMMS] = await Promise.all([
-    fetch(`data/coauthor_network.json?v=${cacheBust}`).then(r => r.json()),
-    fetch(`data/author_similar.json?v=${cacheBust}`).then(r => r.json()).catch(() => ({})),
-    fetch(`data/topic_coords.json?v=${cacheBust}`).then(r => r.json()).catch(() => ({})),
-    fetch(`data/semantic_communities.json?v=${cacheBust}`).then(r => r.json()).catch(() => []),
-    fetch(`data/combined_communities.json?v=${cacheBust}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(`{{ data_base }}/coauthor_network.json?v=${cacheBust}`).then(r => r.json()),
+    fetch(`{{ data_base }}/author_similar.json?v=${cacheBust}`).then(r => r.json()).catch(() => ({})),
+    fetch(`{{ data_base }}/topic_coords.json?v=${cacheBust}`).then(r => r.json()).catch(() => ({})),
+    fetch(`{{ data_base }}/semantic_communities.json?v=${cacheBust}`).then(r => r.json()).catch(() => []),
+    fetch(`{{ data_base }}/combined_communities.json?v=${cacheBust}`).then(r => r.ok ? r.json() : []).catch(() => []),
   ]);
 } catch (err) {
   metaEl.innerHTML = '<div class="count" style="color:#f87171;">Failed to load</div>'
@@ -741,5 +741,6 @@ window.addEventListener('resize', () => {
 });
 })();
 </script>
+{% include "_analytics.html" %}
 </body>
 </html>

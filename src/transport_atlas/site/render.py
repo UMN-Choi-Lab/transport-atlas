@@ -19,6 +19,11 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 DEFAULT_SPECTER2_REPO = "Xenova/all-MiniLM-L6-v2"   # safe fallback; reviewers page
                                                      # gates itself if SPECTER2 isn't set
 EMBED_OUT = Path(os.environ.get("EMBED_OUT", "/data2/chois/transport-atlas"))
+# Heavy data files are served from a separate same-origin Pages site
+# (choi-seongjin.github.io/transport-atlas-data/) so they don't bloat the
+# personal-site git history. Templates fetch `{{ data_base }}/<file>`. Absolute
+# URL so it also works under local preview (the data Pages sends ACAO:*).
+DATA_BASE = os.environ.get("DATA_BASE", "https://choi-seongjin.github.io/transport-atlas-data")
 PAGES = [
     ("index.html", "index", "index.html"),
     ("explorer.html", "explorer", "explorer.html"),
@@ -95,6 +100,9 @@ def run() -> dict:
     })
     graph_report = _load_json(processed / "_graph_report.json", {"nodes": 0, "edges": 0})
     venues = config.load_venues()
+    pipeline_cfg = config.load_pipeline()
+    goatcounter_code = (pipeline_cfg.get("analytics") or {}).get("goatcounter_code") or None
+    update_cadence = (pipeline_cfg.get("update") or {}).get("cadence_human") or "periodically"
 
     specter2_repo = _resolve_specter2_repo()
     log.info(f"specter2 repo for reviewers page: {specter2_repo}")
@@ -106,6 +114,9 @@ def run() -> dict:
         "graph_report": graph_report,
         "specter2_repo": specter2_repo,
         "specter2_is_default": specter2_repo == DEFAULT_SPECTER2_REPO,
+        "goatcounter_code": goatcounter_code,
+        "update_cadence": update_cadence,
+        "data_base": DATA_BASE,
     }
 
     for tmpl, page, outfile in PAGES:

@@ -81,6 +81,8 @@
   {{ graph_report.communities }} Leiden coauthor communities. Authors ranked by a suite of
   network centralities (degree, strength, betweenness, PageRank) alongside citation impact, in
   the spirit of <a href="https://doi.org/10.1016/j.tra.2017.04.011" style="color:#155a8a;">Sun &amp; Rahwan (2017)</a>.
+  <br>
+  <strong>Updated {{ update_cadence }}</strong> from OpenAlex — last refresh {{ build_time }}.
 </div>
 
 <div class="badges">
@@ -176,7 +178,8 @@
 
 <footer>
   Built with Python (OpenAlex API · networkx + leidenalg · scikit-learn TF-IDF · forceatlas2),
-  D3.js canvas for the network, Chart.js, and Tabulator. Last refresh: {{ build_time }}.
+  D3.js canvas for the network, Chart.js, and Tabulator.
+  Updated {{ update_cadence }} · last refresh {{ build_time }}.
   <br>
   Data: <a href="https://openalex.org/">OpenAlex</a> (CC0) ·
   <a href="https://www.crossref.org/">Crossref</a> (CC0).
@@ -184,6 +187,7 @@
   Source: <a href="https://github.com/UMN-Choi-Lab">UMN-Choi-Lab</a>.
   Inspired by <a href="https://gisbi-kim.github.io/robopaper-atlas/">robopaper-atlas</a>.
   Attribution optional under CC0 — we credit anyway.
+  {% include "_analytics.html" %}
 </footer>
 
 </body>

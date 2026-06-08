@@ -1,0 +1,30 @@
+{# GoatCounter tracker + per-page visit-count badge.
+   Gated on `goatcounter_code` so a null/missing config makes this partial inert.
+   The public count fetch additionally requires "Allow public access to the
+   visitor count" to be enabled in GoatCounter site settings; without it the
+   badge silently disappears (the .catch handler clears the placeholder). #}
+{% if goatcounter_code %}
+<script data-goatcounter="https://{{ goatcounter_code }}.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+<span class="visit-count muted" data-gc-count
+      data-gc-host="{{ goatcounter_code }}.goatcounter.com"
+      style="margin-left:8px;font-size:11px;opacity:.75"></span>
+<script>
+(() => {
+  const el = document.querySelector('[data-gc-count]');
+  if (!el) return;
+  const host = el.dataset.gcHost;
+  // GoatCounter keys pageviews by `vars.p`, which defaults to location.pathname.
+  // Match its default exactly so the counter and the badge agree.
+  const path = encodeURIComponent(location.pathname);
+  fetch(`https://${host}/counter/${path}.json`)
+    .then(r => r.ok ? r.json() : null)
+    .then(j => {
+      if (!j || j.count === undefined) { el.textContent = ''; return; }
+      const n = Number(String(j.count).replace(/,/g, ''));
+      el.textContent = `· ${isFinite(n) ? n.toLocaleString() : j.count} views`;
+    })
+    .catch(() => { el.textContent = ''; });
+})();
+</script>
+{% endif %}

@@ -193,7 +193,7 @@ const venueGroupsDef = [
   { name: 'Emerald',            venues: ['JICV'] },
 ];
 
-fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rawPapers => {
+fetch(`{{ data_base }}/papers.json?v=${cacheBust}`).then(r => r.json()).then(rawPapers => {
   document.getElementById('loading').remove();
   document.querySelector('.table-wrap').style.display = 'block';
 
@@ -536,5 +536,6 @@ fetch(`data/papers.json?v=${cacheBust}`).then(r => r.json()).then(rawPapers => {
   applyFilters();  // also populates chart/table/summary
 });
 </script>
+{% include "_analytics.html" %}
 </body>
 </html>
