@@ -22,6 +22,7 @@ Emits:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -97,16 +98,29 @@ def _classify(total_path: float, efficiency: float, net_disp: float) -> str:
 
 
 def main() -> int:  # noqa: C901
-    if not TRAJ_PATH.exists():
-        print(f"[traj] missing {TRAJ_PATH}", file=sys.stderr)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", default=str(TRAJ_PATH),
+                    help="Path to author_trajectories[.sliding].json")
+    ap.add_argument("--year-max-bin", type=int, default=YEAR_MAX_BIN,
+                    help="Drop bins with start year > this")
+    ap.add_argument("--tag", default="",
+                    help="Tag suffix for output paths (avoids overwriting paper figures)")
+    args = ap.parse_args()
+    in_path = Path(args.input).resolve()
+    year_max = args.year_max_bin
+    tag = args.tag
+    if not in_path.exists():
+        print(f"[traj] missing {in_path}", file=sys.stderr)
         return 1
-    trajs = json.loads(TRAJ_PATH.read_text())
+    print(f"[traj] input: {in_path.relative_to(ROOT)}  year_max_bin={year_max}  tag={tag!r}",
+          flush=True)
+    trajs = json.loads(in_path.read_text())
     net = json.loads(NET_PATH.read_text())
     node_meta = {n["id"]: n for n in net["nodes"]}
 
     rows = []
     for nid_str, bins in trajs.items():
-        bins = [b for b in bins if int(b["p"]) <= YEAR_MAX_BIN]
+        bins = [b for b in bins if int(b["p"]) <= year_max]
         if len(bins) < 2:
             continue
         nid = int(nid_str)
@@ -177,7 +191,7 @@ def main() -> int:  # noqa: C901
             f"{int(r['median_span'])} & {int(r['median_bins'])} \\\\"
         )
     lines += [r"\bottomrule", r"\end{tabular}"]
-    (TABLES / "09_trajectory_taxonomy_stats.tex").write_text(
+    (TABLES / f"09_trajectory_taxonomy_stats{tag}.tex").write_text(
         "\n".join(lines) + "\n")
     print("  ✓ tables/09_trajectory_taxonomy_stats.tex")
 
@@ -207,8 +221,8 @@ def main() -> int:  # noqa: C901
     ax.set_ylim(0, lim)
     ax.grid(alpha=0.25)
     ax.legend(frameon=False, fontsize=7.5, loc="upper left")
-    _save(fig, "09_trajectory_scatter")
-    print("  ✓ figures/09_trajectory_scatter.pdf")
+    _save(fig, f"09_trajectory_scatter{tag}")
+    print(f"  ✓ figures/09_trajectory_scatter{tag}.pdf")
 
     # ------------------------------------------------------------------
     # Figure — 4-panel examples (1 per class). Hand-picked exemplars
@@ -282,8 +296,8 @@ def main() -> int:  # noqa: C901
         ax.tick_params(labelsize=6)
         ax.grid(alpha=0.15)
     fig.tight_layout()
-    _save(fig, "09_trajectory_examples")
-    print("  ✓ figures/09_trajectory_examples.pdf")
+    _save(fig, f"09_trajectory_examples{tag}")
+    print(f"  ✓ figures/09_trajectory_examples{tag}.pdf")
 
     # ------------------------------------------------------------------
     # Summary JSON for prose
@@ -311,10 +325,10 @@ def main() -> int:  # noqa: C901
         "median_papers_switcher": float(df.loc[df["class"] == "switcher",
                                                 "papers_all"].median()),
     }
-    (ROOT / "paper" / "analysis" / "_trajectory_taxonomy.json").write_text(
+    (ROOT / "paper" / "analysis" / f"_trajectory_taxonomy{tag}.json").write_text(
         json.dumps(summary, indent=2)
     )
-    print("  ✓ paper/analysis/_trajectory_taxonomy.json")
+    print(f"  ✓ paper/analysis/_trajectory_taxonomy{tag}.json")
 
     # ------------------------------------------------------------------
     # Per-author classification, written to data/processed/ for the site
@@ -355,7 +369,7 @@ def main() -> int:  # noqa: C901
         },
         "authors": site_rows,
     }
-    site_path = ROOT / "data" / "processed" / "trajectory_taxonomy.json"
+    site_path = ROOT / "data" / "processed" / f"trajectory_taxonomy{tag}.json"
     site_path.write_text(json.dumps(site_payload, allow_nan=False))
     print(f"  ✓ data/processed/trajectory_taxonomy.json "
           f"({len(site_rows):,} authors)")

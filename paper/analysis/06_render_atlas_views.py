@@ -37,12 +37,68 @@ plt.rcParams.update({
 
 ROOT = Path(__file__).resolve().parents[2]
 FIGURES = ROOT / "paper" / "manuscript" / "figures"
+CACHE_DIR = ROOT / "paper" / "analysis" / ".label_editor_cache"
+OVERRIDES_PATH = ROOT / "paper" / "analysis" / "label_overrides.yaml"
 
 
 def _save(fig, stem: str) -> None:
     for ext in ("pdf", "png"):
         fig.savefig(FIGURES / f"{stem}.{ext}")
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Label-override plumbing (for the web-based label editor).
+#
+# The renderer's auto-layout stays authoritative until a human drags a label
+# in edit_labels.py → writes `label_overrides.yaml`. On the next render we
+# load that file, pin the overridden labels to their manual xytext, and
+# treat them as fixed obstacles in the repulsion loop so un-pinned labels
+# still flow around them automatically.
+# ---------------------------------------------------------------------------
+def _load_overrides(figure_key: str) -> dict:
+    """Return {label_id_str: [x, y]} in data coords, or {} if none."""
+    if not OVERRIDES_PATH.exists():
+        return {}
+    try:
+        import yaml
+        doc = yaml.safe_load(OVERRIDES_PATH.read_text()) or {}
+    except Exception as e:
+        print(f"[atlas-fig] WARN: could not parse {OVERRIDES_PATH}: {e}")
+        return {}
+    sub = doc.get(figure_key) or {}
+    out: dict[str, list[float]] = {}
+    for k, v in sub.items():
+        if isinstance(v, (list, tuple)) and len(v) == 2:
+            out[str(k)] = [float(v[0]), float(v[1])]
+    return out
+
+
+def _write_specs(figure_key: str, payload: dict) -> None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    (CACHE_DIR / f"{figure_key}.specs.json").write_text(
+        json.dumps(payload, indent=2, allow_nan=False))
+
+
+def _save_bg_svg(fig, figure_key: str) -> None:
+    """Save the current figure state (background only — caller must not have
+    drawn labels yet) as an SVG under CACHE_DIR for the web editor.
+
+    Uses `bbox_inches=None` to override the global `savefig.bbox='tight'`
+    rcParam. We need the *full* figure frame (not a tight-crop of the
+    background content) so the editor's coord system matches the PDF's.
+    The PDF uses tight-crop including labels; the bg.svg has no labels, so
+    its tight-crop would be the axes rect only — a narrower region than
+    the PDF eventually occupies. Using the full 9×8.2 in frame gives the
+    editor and PDF the same coordinate basis."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    # bbox_inches=fig.bbox_inches forces the FULL figure bbox (9×8.2 or
+    # 9×7.8 inches). Passing None or not passing it falls through to the
+    # global `savefig.bbox='tight'` rcParam, which would crop the SVG to
+    # just the axes rect — and miss the region around it that the PDF
+    # eventually occupies once labels are drawn and its own tight-crop runs.
+    fig.savefig(CACHE_DIR / f"{figure_key}.bg.svg", format="svg",
+                bbox_inches=fig.bbox_inches)
 
 
 def _golden_hsl(cid: int) -> tuple[float, float, float]:
@@ -157,6 +213,7 @@ def render_coauthor_overview() -> None:
 
     fig, ax = plt.subplots(figsize=(9.0, 8.2))
     _draw_background(ax)
+    _save_bg_svg(fig, "coauthor_overview")
 
     # In-plot community labels: start at each community's degree-weighted
     # centroid, then push outward along the radial direction so labels fan
@@ -208,7 +265,22 @@ def render_coauthor_overview() -> None:
         box_half_w.append(0.5 * width_in / 9.0 * x_span)
         box_half_h.append(0.5 * height_in / 8.2 * y_span)
 
-    # Iterative repulsion: push overlapping label boxes apart.
+    # Snapshot the pre-override auto positions so the editor's "reset to
+    # auto" feature has something stable to go back to.
+    auto_label_xy = [list(v) for v in label_xy]
+
+    # Load manual overrides (from web editor). Pinned labels skip repulsion
+    # movement below, but still count as obstacles for un-pinned labels.
+    co_overrides = _load_overrides("coauthor_overview")
+    label_ids = [str(top_comms[r]) for r in label_ranks]
+    pinned = [False] * len(label_xy)
+    for i, lid in enumerate(label_ids):
+        if lid in co_overrides:
+            label_xy[i] = list(co_overrides[lid])
+            pinned[i] = True
+
+    # Iterative repulsion: push overlapping label boxes apart. Pinned labels
+    # don't move; un-pinned labels absorb 100 % of any overlap correction.
     for _ in range(60):
         moved = False
         for i in range(len(label_xy)):
@@ -220,20 +292,47 @@ def render_coauthor_overview() -> None:
                 overlap_x = min_dx - abs(dx)
                 overlap_y = min_dy - abs(dy)
                 if overlap_x > 0 and overlap_y > 0:
-                    # Push apart along the cheaper axis
+                    if pinned[i] and pinned[j]:
+                        continue  # both pinned — accept user's layout
+                    # Push apart along the cheaper axis, weighting the
+                    # movement onto the un-pinned side(s).
+                    w_i = 0.0 if pinned[i] else 1.0
+                    w_j = 0.0 if pinned[j] else 1.0
+                    w_sum = w_i + w_j
                     if overlap_x < overlap_y:
-                        push = overlap_x * 0.55
+                        push = overlap_x * 1.05
                         sign = 1.0 if dx >= 0 else -1.0
-                        label_xy[i][0] -= sign * push
-                        label_xy[j][0] += sign * push
+                        label_xy[i][0] -= sign * push * (w_i / w_sum)
+                        label_xy[j][0] += sign * push * (w_j / w_sum)
                     else:
-                        push = overlap_y * 0.55
+                        push = overlap_y * 1.05
                         sign = 1.0 if dy >= 0 else -1.0
-                        label_xy[i][1] -= sign * push
-                        label_xy[j][1] += sign * push
+                        label_xy[i][1] -= sign * push * (w_i / w_sum)
+                        label_xy[j][1] += sign * push * (w_j / w_sum)
                     moved = True
         if not moved:
             break
+
+    # Emit specs cache for the web label editor.
+    _write_specs("coauthor_overview", {
+        "figure_key": "coauthor_overview",
+        "figsize":    [9.0, 8.2],
+        "xlim":       [float(xlim[0]), float(xlim[1])] if xlim else None,
+        "ylim":       [float(ylim[0]), float(ylim[1])] if ylim else None,
+        "labels": [
+            {
+                "id":          label_ids[i],
+                "text":        label_texts[i],
+                "anchor_xy":   [float(anchor_xy[i][0]), float(anchor_xy[i][1])],
+                "auto_xytext": [float(auto_label_xy[i][0]), float(auto_label_xy[i][1])],
+                "color":       list(_comm_color(label_ranks[i])),
+                "box_half_wh": [float(box_half_w[i]), float(box_half_h[i])],
+                "fontsize":    8.0,
+                "pinned":      pinned[i],
+            }
+            for i in range(len(label_xy))
+        ],
+    })
 
     for (anchor, (lx, ly), text, rank) in zip(
             anchor_xy, label_xy, label_texts, label_ranks):
@@ -262,6 +361,7 @@ def render_coauthor_overview() -> None:
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(9.0, 8.2))
     _draw_background(ax)
+    _save_bg_svg(fig, "lcc_labeled")
 
     # Label ~40 authors, but select the top-K per top-community so the
     # labels are spread over the plot rather than piled up in the single
@@ -305,6 +405,19 @@ def render_coauthor_overview() -> None:
     # another. Magnitude scales with the local density.
     cx_all = float(np.mean(xs[lcc_mask]))
     cy_all = float(np.mean(ys[lcc_mask]))
+    # Convert the 34-pt radial offset to data units once so overrides are
+    # also in data coords (same basis the web editor drags in).
+    x_lo_px, x_hi_px = ax.get_xlim()
+    y_lo_px, y_hi_px = ax.get_ylim()
+    x_span = x_hi_px - x_lo_px
+    y_span = y_hi_px - y_lo_px
+    #  34 pt = 34/72 in ;  fig is 9 × 8.2 in ;  → x_span / 9 data units per inch.
+    off_pt_data_x = 34.0 / 72.0 * x_span / 9.0
+    off_pt_data_y = 34.0 / 72.0 * y_span / 8.2
+
+    lcc_overrides = _load_overrides("lcc_labeled")
+    lcc_specs: list[dict] = []
+
     for i in to_label:
         name = labels[i] or ""
         if "," in name:
@@ -316,22 +429,51 @@ def render_coauthor_overview() -> None:
         dx = float(xs[i]) - cx_all
         dy = float(ys[i]) - cy_all
         norm = (dx * dx + dy * dy) ** 0.5 or 1.0
-        # Larger radial offset so labels fan out of the dense centre
-        off_x = 34.0 * dx / norm
-        off_y = 34.0 * dy / norm
-        ha = "left" if off_x >= 0 else "right"
-        va = "bottom" if off_y >= 0 else "top"
+        auto_x = float(xs[i]) + off_pt_data_x * dx / norm
+        auto_y = float(ys[i]) + off_pt_data_y * dy / norm
+
+        # Identify labels by author_key (stable across alias merges) rather
+        # than integer node id (which shifts when authors are merged/removed
+        # because node ids are derived from a sorted-author position).
+        author_key = nodes[i].get("key") or str(int(nodes[i]["id"]))
+        ov = lcc_overrides.get(author_key)
+        if ov is not None:
+            lx, ly = float(ov[0]), float(ov[1])
+            pinned_here = True
+        else:
+            lx, ly = auto_x, auto_y
+            pinned_here = False
+
+        ha = "left" if (lx - float(xs[i])) >= 0 else "right"
+        va = "bottom" if (ly - float(ys[i])) >= 0 else "top"
         ax.annotate(
             pretty, (xs[i], ys[i]),
             fontsize=7.2, fontweight="bold", color="black",
             ha=ha, va=va,
-            textcoords="offset points", xytext=(off_x, off_y),
+            xytext=(lx, ly),          # now in data coords (textcoords default = 'data')
             bbox=dict(boxstyle="round,pad=0.22", facecolor="white",
                       alpha=0.92, edgecolor="#333", linewidth=0.4),
             arrowprops=dict(arrowstyle="-", color="#555", lw=0.5,
                             shrinkA=0, shrinkB=2),
             zorder=6,
         )
+        lcc_specs.append({
+            "id":          author_key,
+            "text":        pretty,
+            "anchor_xy":   [float(xs[i]), float(ys[i])],
+            "auto_xytext": [auto_x, auto_y],
+            "color":       [0.0, 0.0, 0.0],     # black text; border is "#333"
+            "fontsize":    7.2,
+            "pinned":      pinned_here,
+        })
+
+    _write_specs("lcc_labeled", {
+        "figure_key": "lcc_labeled",
+        "figsize":    [9.0, 8.2],
+        "xlim":       [float(x_lo_px), float(x_hi_px)],
+        "ylim":       [float(y_lo_px), float(y_hi_px)],
+        "labels":     lcc_specs,
+    })
     ax.set_aspect("equal")
     ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
@@ -382,6 +524,8 @@ def render_topic_space() -> None:
     ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
+    # Note: bg.svg is saved AFTER the crop is applied (below) so the editor
+    # page sees the same axis extents the PDF will use.
 
     # Crop to the 2-98 percentile of coloured-community coordinates so
     # sparse UMAP outliers don't squeeze the main mass into a small blob.
@@ -394,6 +538,7 @@ def render_topic_space() -> None:
         y_range = y_hi - y_lo
         ax.set_xlim(x_lo - pad * x_range, x_hi + pad * x_range)
         ax.set_ylim(y_lo - pad * y_range, y_hi + pad * y_range)
+    _save_bg_svg(fig, "topic_space")
 
     # In-plot community labels at the size-weighted centroid of each
     # coloured community, with iterative repulsion so boxes don't
@@ -449,6 +594,20 @@ def render_topic_space() -> None:
         box_half_w.append(0.5 * width_in / 9.0 * x_span)
         box_half_h.append(0.5 * height_in / 7.8 * y_span)
 
+    # Snapshot pre-override auto positions for the editor's "reset".
+    ts_auto_label_xy = [list(v) for v in label_xy]
+
+    # Apply manual overrides (web editor). Pinned labels are fixed
+    # obstacles during the repulsion loop; un-pinned labels absorb 100 %
+    # of any overlap correction.
+    ts_overrides = _load_overrides("topic_space")
+    ts_label_ids = [str(top_ids[r]) for r in label_ranks]
+    ts_pinned = [False] * len(label_xy)
+    for i, lid in enumerate(ts_label_ids):
+        if lid in ts_overrides:
+            label_xy[i] = list(ts_overrides[lid])
+            ts_pinned[i] = True
+
     # More aggressive padding (1.20 horizontal, 1.45 vertical) and
     # twice as many iterations than the coauthor overview, because the
     # topic-space cluster is denser (22 labels in the same plot area).
@@ -463,19 +622,44 @@ def render_topic_space() -> None:
                 overlap_x = min_dx - abs(dx)
                 overlap_y = min_dy - abs(dy)
                 if overlap_x > 0 and overlap_y > 0:
+                    if ts_pinned[i] and ts_pinned[j]:
+                        continue
+                    w_i = 0.0 if ts_pinned[i] else 1.0
+                    w_j = 0.0 if ts_pinned[j] else 1.0
+                    w_sum = w_i + w_j
                     if overlap_x < overlap_y:
-                        push = overlap_x * 0.6
+                        push = overlap_x * 1.2
                         sign = 1.0 if dx >= 0 else -1.0
-                        label_xy[i][0] -= sign * push
-                        label_xy[j][0] += sign * push
+                        label_xy[i][0] -= sign * push * (w_i / w_sum)
+                        label_xy[j][0] += sign * push * (w_j / w_sum)
                     else:
-                        push = overlap_y * 0.6
+                        push = overlap_y * 1.2
                         sign = 1.0 if dy >= 0 else -1.0
-                        label_xy[i][1] -= sign * push
-                        label_xy[j][1] += sign * push
+                        label_xy[i][1] -= sign * push * (w_i / w_sum)
+                        label_xy[j][1] += sign * push * (w_j / w_sum)
                     moved = True
         if not moved:
             break
+
+    _write_specs("topic_space", {
+        "figure_key": "topic_space",
+        "figsize":    [9.0, 7.8],
+        "xlim":       [float(ax.get_xlim()[0]), float(ax.get_xlim()[1])],
+        "ylim":       [float(ax.get_ylim()[0]), float(ax.get_ylim()[1])],
+        "labels": [
+            {
+                "id":          ts_label_ids[i],
+                "text":        label_texts[i],
+                "anchor_xy":   [float(anchor_xy[i][0]), float(anchor_xy[i][1])],
+                "auto_xytext": [float(ts_auto_label_xy[i][0]), float(ts_auto_label_xy[i][1])],
+                "color":       list(_comm_color(label_ranks[i])),
+                "box_half_wh": [float(box_half_w[i]), float(box_half_h[i])],
+                "fontsize":    7.4,
+                "pinned":      ts_pinned[i],
+            }
+            for i in range(len(label_xy))
+        ],
+    })
 
     for (anchor, (lx, ly), text, rank) in zip(
             anchor_xy, label_xy, label_texts, label_ranks):

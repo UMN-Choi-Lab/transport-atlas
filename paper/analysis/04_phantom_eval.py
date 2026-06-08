@@ -147,7 +147,7 @@ def main() -> int:
         ax.axhline(base_rate, color=OKABE_ITO[5], linestyle=":", linewidth=1,
                    label=f"Mean rate ({base_rate:.3f}%)")
         ax.set_xlabel("Median pairwise cosine similarity (whitened, bucket)")
-        ax.set_ylabel("Realised in 2020--2025 (%)")
+        ax.set_ylabel("Realized future-coauthor rate, 2020--2025 (%)")
         ax.grid(alpha=0.25)
         ax.legend(frameon=False, fontsize=8)
         _save(fig, "08_phantom_calibration")
