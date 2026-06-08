@@ -128,7 +128,34 @@ site/            rendered static site (gitignored)
 
 ## API keys
 
-All API keys are read from `~/.claude/mcp-servers/refcheck/.env` via `transport_atlas.utils.config`. Keys: `ELSEVIER_KEY`, `ELSEVIER_INSTTOKEN`, `IEEE_API_KEY`, `S2_API_KEY`, `CROSSREF_EMAIL`. **Never commit keys** to this repo — they live outside the project tree.
+Pipeline API keys are read from `~/.claude/mcp-servers/refcheck/.env` via `transport_atlas.utils.config`. Keys: `ELSEVIER_KEY`, `ELSEVIER_INSTTOKEN`, `IEEE_API_KEY`, `S2_API_KEY`, `CROSSREF_EMAIL`. **Never commit keys** to this repo — they live outside the project tree.
+
+Project-local secrets (Overleaf git token) live in `/home/chois/gitsrcs/transportation/.env` (gitignored). See "Manuscript ↔ Overleaf sync" below.
+
+## Manuscript ↔ Overleaf sync
+
+The `paper/manuscript/` directory is a **separate git repo** whose remote is Overleaf (`https://git.overleaf.com/69ea32574eef7c3a688295d2`). The outer `transportation` repo ignores it. Overleaf requires a token and uses `master` on the remote, but the local branch is `main`.
+
+Token: `OVERLEAF` in `/home/chois/gitsrcs/transportation/.env` (gitignored). Never embed the token in commits or commit messages.
+
+```bash
+# Commit locally on main, then push main -> master via tokenized URL:
+set -a; . /home/chois/gitsrcs/transportation/.env; set +a
+git -C paper/manuscript add main.tex   # or specific files
+git -C paper/manuscript commit -m "..."
+git -C paper/manuscript push "https://git:${OVERLEAF}@git.overleaf.com/69ea32574eef7c3a688295d2" main:master
+
+# If Overleaf web edits landed first, fetch + rebase before pushing:
+git -C paper/manuscript fetch "https://git:${OVERLEAF}@git.overleaf.com/69ea32574eef7c3a688295d2" master:refs/remotes/overleaf/master
+git -C paper/manuscript rebase overleaf/master
+# then re-run the push command above
+```
+
+Rules:
+- Always rebase (never merge) onto `overleaf/master` — Overleaf's auto-commits are linear and a merge commit desyncs the web editor's history view.
+- Never `push --force` to Overleaf; the web editor will silently drop unsaved changes from anyone else editing.
+- Scrub the token from any output you surface to the user: `... 2>&1 | sed "s|${OVERLEAF}|<redacted>|g"`.
+- Figures live in `paper/manuscript/figures/` — Overleaf compiles them, so keep filenames stable across commits.
 
 ## Refresh commands
 

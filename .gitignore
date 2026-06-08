@@ -38,3 +38,6 @@ paper/manuscript/
 
 # Paper-level scratch outputs (fit parameters, intermediate JSON)
 paper/analysis/_*.json
+
+# Label editor caches (regenerated from data/processed by 06_render_atlas_views.py)
+paper/analysis/.label_editor_cache/

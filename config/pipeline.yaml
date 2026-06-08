@@ -80,3 +80,109 @@ author_aliases:
       - A5048411553   # 2025 UQ singleton, author record "Jiwon Kim @ UQ"
       - A5100462892   # 2013 Northwestern singleton (also caught by coauthor overlap)
       - A5100462894   # 2024 UQ singleton, author record "Jiwon Kim @ UQ"
+  - canonical: "Yuankai Wu"
+    orcid: "0000-0003-4435-9413"
+    openalex_ids:
+      - A5100370856   # primary, 13 papers (UESTC / Sichuan U)
+      - A5065903043   # McGill postdoc era, ORCID 0000-0003-0573-2609 — same person
+  - canonical: "Lijun Sun"
+    orcid: "0000-0001-9488-0712"
+    openalex_ids:
+      - A5058941074   # primary McGill, 61 papers
+      - A5100786084   # 2024 T-ITS "Rethinking Urban Mobility", McGill, ORCID 0000-0002-0561-6934 — same person
+
+  # ---------------------------------------------------------------------------
+  # Batch added 2026-04-24 from paper/analysis/_split_identity_audit.md
+  # HIGH tier: one key without ORCID + shared institution + ≥3 shared coauthors.
+  # These are the "ORCID registered mid-career, older papers not back-linked"
+  # pattern. Sonnet audit surfaced zero confirmed false positives at this gate.
+  # Paper-counts (Pn) + shared-coauthor/restored-edge stats (SC/RE) per row.
+  # ---------------------------------------------------------------------------
+  - canonical: "Shirong Ge"
+    orcid: "0000-0002-7350-1493"
+    openalex_ids:
+      - A5017962413   # primary, 6p   (China Univ. Mining & Tech; MoT)
+      - A5110091391   # 4p, no ORCID  — SC=4 RE=2
+  - canonical: "Xuezhe Wei"
+    orcid: "0000-0001-9043-2330"
+    openalex_ids:
+      - A5082361275   # primary, 21p  (Tongji U)
+      - A5121121005   # 3p, no ORCID  — SC=3 RE=2
+  - canonical: "Patrice Marcotte"
+    orcid: "0000-0002-1935-2554"
+    openalex_ids:
+      - A5102990491   # primary, 12p  (Royal Military College; Univ. de Montréal)
+      - A5106419971   # 6p, no ORCID  — SC=3 RE=2
+  - canonical: "Guohua Song"
+    orcid: "0000-0002-8180-8153"
+    openalex_ids:
+      - A5051911098   # primary, 53p  (Beijing Jiaotong U; MoT)
+      - A5123191968   # 5p, no ORCID  — SC=5 RE=1
+  - canonical: "Zhihua Zhong"
+    orcid: "0009-0003-6530-9930"
+    openalex_ids:
+      - A5101987780   # primary, 13p  (Tsinghua U; CAE)
+      - A5112411803   # 4p, no ORCID  — SC=5 RE=1
+  - canonical: "Min Yang"
+    orcid: "0000-0002-8595-2769"
+    openalex_ids:
+      - A5066418709   # primary, 29p  (Southeast U)
+      - A5101852844   # 12p, no ORCID — SC=9 RE=0 (merges authors only, no new edges)
+  - canonical: "Zhe Xiao"
+    orcid: "0000-0002-0440-5772"
+    openalex_ids:
+      - A5007706560   # primary, 7p   (A*STAR; Inst. of High Performance Computing)
+      - A5100895846   # 4p, no ORCID  — SC=4 RE=0
+  - canonical: "Xuebing Han"
+    orcid: "0000-0001-7896-9354"
+    openalex_ids:
+      - A5100611797   # primary, 9p   (Tsinghua U)
+      - A5042099106   # 3p, no ORCID  — SC=4 RE=0
+  - canonical: "Lingshu Zhong"
+    orcid: "0000-0002-0021-0548"
+    openalex_ids:
+      - A5075135732   # primary, 6p   (Chalmers U; Sun Yat-sen U)
+      - A5003205429   # 6p, no ORCID  — SC=3 RE=0
+  - canonical: "Jean-Francois Cordeau"
+    orcid: "0000-0002-4963-1298"
+    openalex_ids:
+      - A5016828932   # primary, 36p  (HEC Montréal)
+      - A5110086210   # 6p, no ORCID  — SC=3 RE=0
+  - canonical: "Shoudao Huang"
+    orcid: "0000-0002-6923-9605"
+    openalex_ids:
+      - A5068705108   # primary, 30p  (Hunan U)
+      - A5022854751   # 4p, no ORCID  — SC=3 RE=0
+  - canonical: "Geetam Tiwari"
+    orcid: "0000-0002-9302-1243"
+    openalex_ids:
+      - A5076416521   # primary, 31p  (IIT Delhi)
+      - A5112619468   # 7p, no ORCID  — SC=3 RE=0
+  - canonical: "Yi-Bin Xiao"
+    orcid: "0000-0002-0676-7662"
+    openalex_ids:
+      - A5080881249   # primary, 11p  (UESTC)
+      - A5111406931   # 5p, no ORCID  — SC=3 RE=0
+
+  # ---------------------------------------------------------------------------
+  # HIGH_AMB tier — manually verified via OpenAlex API (2026-04-24).
+  # `Xuesong Zhou` confirmed same person: both records show ASU 2013-2025 and
+  # Univ. of Utah as prior affiliation, consistent career trajectory with
+  # 151-work vs 97-work split that OpenAlex created. Merging restores 4 edges.
+  # `Long Chen` NOT enabled: the primary record (A5100336450, 491 works at
+  # 120+ institutions globally per OpenAlex API) is itself almost certainly a
+  # conflation of multiple distinct Long Chen researchers. Merging a second
+  # record into it would worsen identity resolution, not fix it. Needs a
+  # separate disentangle-first-merge-later effort (tracked for post-submission).
+  # ---------------------------------------------------------------------------
+  - canonical: "Xuesong Zhou"
+    orcid: "0000-0002-9963-5369"
+    openalex_ids:
+      - A5047902154   # primary, 66p  (ASU, Xuesong Simon Zhou)
+      - A5113436201   # 38p  (same career, Utah→ASU — OpenAlex split) — SC=21 RE=4
+
+  # - canonical: "Long Chen"                             # DO NOT ENABLE
+  #   orcid: "0000-0003-4925-0572"
+  #   openalex_ids:
+  #     - A5100336450   # 49p in corpus, 491 globally — already multi-person conflation
+  #     - A5113009903   # 19p, ORCID 0000-0003-2546-6926 — SC=29 RE=6 if merged

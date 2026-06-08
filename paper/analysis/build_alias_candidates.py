@@ -21,7 +21,6 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "data" / "interim" / "alias_candidates.json"
-MAX_PAIRS = 200
 MIN_COAUTHOR_OVERLAP = 2
 
 
@@ -129,11 +128,20 @@ def main() -> int:
                     "b": side(b),
                 })
 
-    # Sort by overlap count descending, take top MAX_PAIRS
+    # Sort by overlap count descending. Optional --max-pairs caps the output
+    # for cheap dry runs; default writes the full population.
     candidates.sort(key=lambda c: -c["overlap_count"])
-    candidates = candidates[:MAX_PAIRS]
-    OUT.write_text(json.dumps(candidates, indent=2, default=str))
-    print(f"[cands] wrote {OUT} ({len(candidates)} pairs)")
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--max-pairs", type=int, default=None,
+                   help="cap output at top-N pairs (default: full population)")
+    p.add_argument("--out", default=str(OUT))
+    args = p.parse_args()
+    if args.max_pairs is not None:
+        candidates = candidates[: args.max_pairs]
+    out = Path(args.out)
+    out.write_text(json.dumps(candidates, indent=2, default=str))
+    print(f"[cands] wrote {out} ({len(candidates)} pairs)")
     return 0
 
 

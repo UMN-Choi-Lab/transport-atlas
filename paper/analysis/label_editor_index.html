@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Label Editor — Fig 2 / Fig 4</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, -apple-system, sans-serif;
+               background: #1f2937; color: #e5e7eb; overflow: hidden; }
+  #top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #111827;
+         border-bottom: 1px solid #374151; font-size: 13px; }
+  #top .tab { padding: 6px 12px; border-radius: 4px; cursor: pointer; background: #374151; color: #d1d5db; }
+  #top .tab.active { background: #2563eb; color: #fff; }
+  #top .spacer { flex: 1; }
+  #top button { background: #374151; color: #e5e7eb; border: 1px solid #4b5563; padding: 6px 12px;
+                border-radius: 4px; cursor: pointer; font-size: 13px; }
+  #top button:hover { background: #4b5563; }
+  #top button.primary { background: #16a34a; border-color: #16a34a; color: #fff; }
+  #top button.primary:hover { background: #15803d; }
+  #status { padding: 4px 12px; background: #111827; font-size: 11px; color: #9ca3af;
+            border-bottom: 1px solid #374151; display: flex; gap: 20px; }
+  #stage { position: relative; width: 100%; height: calc(100vh - 78px); background: #fff;
+           overflow: hidden; }
+  /* Inset the figure so labels that the auto-layout pushes OUTSIDE the axes
+     rect (e.g. Fig 4's topic-space labels that extend ~7% past the axes
+     box) still land in visible stage area instead of being clipped. The
+     10% margin is generous; the actual max overshoot we've seen is ~9%. */
+  #bg { position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; pointer-events: none;
+        user-select: none; }
+  #bg img, #bg object, #bg svg { width: 100%; height: 100%; display: block; object-fit: contain; }
+  #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .lbl { position: absolute; pointer-events: auto; cursor: grab; padding: 3px 6px; border-radius: 4px;
+         background: rgba(255,255,255,0.92); color: #000; font-weight: 700; text-align: center;
+         white-space: pre; line-height: 1.15; transform: translate(-50%, -50%); user-select: none;
+         box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+  .lbl.dragging { cursor: grabbing; opacity: 0.85; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 100; }
+  .lbl.pinned { outline: 2px dashed #f59e0b; outline-offset: 1px; }
+  .lbl.selected { z-index: 50; }
+  .connector { stroke-width: 0.8; fill: none; }
+  .anchor-dot { fill: #000; stroke: #fff; stroke-width: 1; }
+  #help { position: fixed; bottom: 10px; right: 10px; background: rgba(17,24,39,0.9); color: #e5e7eb;
+          padding: 8px 12px; border-radius: 6px; font-size: 11px; line-height: 1.5; max-width: 280px; }
+  #help kbd { background: #374151; padding: 1px 5px; border-radius: 3px; font-size: 10px; }
+  #toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+           background: #16a34a; color: #fff; padding: 8px 16px; border-radius: 6px;
+           font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #toast.err { background: #dc2626; }
+</style>
+</head>
+<body>
+<div id="top">
+  <strong style="margin-right: 8px;">Label Editor</strong>
+  <div id="tabs"></div>
+  <div class="spacer"></div>
+  <span id="pin-count" style="font-size: 11px; color: #9ca3af;"></span>
+  <button id="btn-reset-sel" title="Reset the selected label to its auto position">Reset selected</button>
+  <button id="btn-reset-all" title="Reset all labels on THIS figure to auto">Reset all</button>
+  <button id="btn-connectors" title="Toggle connector lines">Hide connectors</button>
+  <button id="btn-save" class="primary">Save YAML</button>
+</div>
+<div id="status">
+  <span>Cursor: <span id="cur-xy">—</span></span>
+  <span>Selected: <span id="sel-info">—</span></span>
+  <span id="file-info" style="margin-left: auto;"></span>
+</div>
+<div id="stage">
+  <div id="bg"></div>
+  <svg id="overlay"></svg>
+</div>
+<div id="help">
+  <b>Drag</b> any label to move it. <b>Right-click</b> → reset to auto.<br>
+  <kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>S</kbd> save · <kbd>C</kbd> toggle connectors<br>
+  <span style="color: #f59e0b;">Orange dash</span> = pinned (overridden). Others auto-layout.
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+const $ = (id) => document.getElementById(id);
+const stage = $('stage'), bg = $('bg'), overlay = $('overlay');
+
+const state = {
+  figures: [],            // [{key, title}]
+  active: null,           // figure key
+  specs: {},              // {fkey: {labels, xlim, ylim, figsize}}
+  positions: {},          // {fkey: {lid: [x,y] or null}}  (null = pinned->auto reset)
+  selected: null,         // {fkey, lid}
+  connectors: true,
+  bgBBox: null,           // {x0,y0,w,h} of the SVG viewBox in stage pixels
+  undoStack: [],          // [{fkey, lid, prev, next}]
+  redoStack: [],
+  initialLoad: {},        // what the server said on load, to compare dirty
+};
+
+function toast(msg, isErr) {
+  const t = $('toast'); t.textContent = msg; t.className = 'show' + (isErr ? ' err' : '');
+  setTimeout(() => { t.className = ''; }, 1800);
+}
+
+async function boot() {
+  const r = await fetch('/api/figures'); const d = await r.json();
+  state.figures = d.figures;
+  state.initialLoad = d.overrides || {};
+  // Seed positions from server-side overrides.
+  for (const f of state.figures) {
+    state.positions[f.key] = Object.assign({}, state.initialLoad[f.key] || {});
+  }
+  buildTabs();
+  await selectFigure(state.figures[0].key);
+}
+
+function buildTabs() {
+  const tabs = $('tabs');
+  tabs.innerHTML = '';
+  for (const f of state.figures) {
+    const el = document.createElement('div');
+    el.className = 'tab' + (f.key === state.active ? ' active' : '');
+    el.textContent = f.title;
+    el.onclick = () => selectFigure(f.key);
+    tabs.appendChild(el);
+  }
+}
+
+async function selectFigure(fkey) {
+  state.active = fkey;
+  state.selected = null;
+  buildTabs();
+  if (!state.specs[fkey]) {
+    const r = await fetch(`/api/figure/${fkey}.json`);
+    state.specs[fkey] = await r.json();
+  }
+  await loadBackground(fkey);
+  // Wait one frame so bg <img>/<object> has layout.
+  requestAnimationFrame(() => { measureBgBBox(); render(); });
+}
+
+function loadBackground(fkey) {
+  // Use <object> so the SVG scales cleanly via viewBox and is measurable.
+  return new Promise((resolve) => {
+    bg.innerHTML = '';
+    const obj = document.createElement('object');
+    obj.type = 'image/svg+xml';
+    obj.data = `/bg/${fkey}.svg?t=${Date.now()}`;
+    obj.onload = () => resolve();
+    bg.appendChild(obj);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Coord transforms.
+// The SVG from matplotlib has a viewBox covering the full figure (9×8.2 in
+// or 9×7.8 in at 72 pt/in → 648×590.4 px or 648×561.6 px). Inside that,
+// matplotlib wraps the plotting area in `<g id="axes_1">`. We read that
+// group's bounding box at load time to get the exact axes rect — no more
+// per-figure fudge factor (which was causing Fig 4 to clip vertically
+// because its bbox_inches='tight' margins aren't symmetric with Fig 2).
+//
+// Fallback: if the SVG didn't parse or the axes group isn't found, we
+// degrade to a fixed 96%-of-figure guess that's a reasonable average.
+// ---------------------------------------------------------------------------
+const AXES_FRAC_FALLBACK = { x: 0.02, y: 0.02, w: 0.96, h: 0.96 };
+
+function readAxesFrac() {
+  // Returns { x, y, w, h } as fractions of the SVG viewBox, or null if
+  // the <object>'s SVG isn't ready / accessible.
+  const obj = bg.querySelector('object');
+  if (!obj) return null;
+  const doc = obj.contentDocument;
+  if (!doc) return null;
+  const svg = doc.querySelector('svg');
+  const axes = doc.getElementById('axes_1');
+  if (!svg || !axes) return null;
+  let vb = svg.viewBox && svg.viewBox.baseVal;
+  if (!vb || (!vb.width && !vb.height)) {
+    // Some matplotlib SVG outputs set width/height attrs but no viewBox.
+    const w = parseFloat(svg.getAttribute('width'));
+    const h = parseFloat(svg.getAttribute('height'));
+    if (!isFinite(w) || !isFinite(h)) return null;
+    vb = { x: 0, y: 0, width: w, height: h };
+  }
+  let ab;
+  try { ab = axes.getBBox(); } catch { return null; }
+  if (!ab || !ab.width || !ab.height) return null;
+  return {
+    x: (ab.x - vb.x) / vb.width,
+    y: (ab.y - vb.y) / vb.height,
+    w:  ab.width  / vb.width,
+    h:  ab.height / vb.height,
+  };
+}
+
+function measureBgBBox() {
+  const obj = bg.querySelector('object');
+  if (!obj) return;
+  const r = obj.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  const spec = state.specs[state.active];
+  if (!spec) return;
+  // Use the actual SVG viewBox aspect ratio, NOT spec.figsize — matplotlib's
+  // bbox_inches='tight' crops the saved SVG to drawn content, so the viewBox
+  // aspect diverges from the declared figsize. Using figsize here was causing
+  // the horizontal data↔pixel mapping to be off, so labels dragged "near the
+  // cluster" in the editor would land far from the cluster in the rendered PDF.
+  let arSvg;
+  const doc = obj.contentDocument;
+  const svgEl = doc && doc.querySelector('svg');
+  const vb = svgEl && svgEl.viewBox && svgEl.viewBox.baseVal;
+  if (vb && vb.width && vb.height) {
+    arSvg = vb.width / vb.height;
+  } else {
+    const [fw, fh] = spec.figsize;
+    arSvg = fw / fh;
+  }
+  const arBox = r.width / r.height;
+  let drawW, drawH, offX, offY;
+  if (arSvg > arBox) {
+    drawW = r.width;  drawH = r.width / arSvg;
+    offX = 0;          offY = (r.height - drawH) / 2;
+  } else {
+    drawH = r.height; drawW = r.height * arSvg;
+    offY = 0;          offX = (r.width - drawW) / 2;
+  }
+  const AF = readAxesFrac() || AXES_FRAC_FALLBACK;
+  state.bgBBox = {
+    x0: (r.left - sr.left) + offX + drawW * AF.x,
+    y0: (r.top  - sr.top ) + offY + drawH * AF.y,
+    w:  drawW * AF.w,
+    h:  drawH * AF.h,
+  };
+}
+
+function dataToStage(x, y) {
+  const spec = state.specs[state.active];
+  const [xLo, xHi] = spec.xlim, [yLo, yHi] = spec.ylim;
+  const b = state.bgBBox;
+  const u = (x - xLo) / (xHi - xLo);
+  const v = (y - yLo) / (yHi - yLo);
+  return { px: b.x0 + u * b.w, py: b.y0 + (1 - v) * b.h };
+}
+function stageToData(px, py) {
+  const spec = state.specs[state.active];
+  const [xLo, xHi] = spec.xlim, [yLo, yHi] = spec.ylim;
+  const b = state.bgBBox;
+  const u = (px - b.x0) / b.w;
+  const v = 1 - (py - b.y0) / b.h;
+  return { x: xLo + u * (xHi - xLo), y: yLo + v * (yHi - yLo) };
+}
+
+function currentXY(lbl) {
+  // Returns the current xytext in data coords (manual override > auto).
+  const over = state.positions[state.active] && state.positions[state.active][lbl.id];
+  if (over) return over;
+  return lbl.auto_xytext;
+}
+function isPinned(lbl) {
+  return !!(state.positions[state.active] && state.positions[state.active][lbl.id]);
+}
+
+function render() {
+  const spec = state.specs[state.active];
+  // Clear overlay.
+  overlay.innerHTML = '';
+  // Re-layout overlay svg to stage size for its own coord system.
+  const sr = stage.getBoundingClientRect();
+  overlay.setAttribute('viewBox', `0 0 ${sr.width} ${sr.height}`);
+  overlay.setAttribute('width', sr.width);
+  overlay.setAttribute('height', sr.height);
+
+  // Remove old labels div-style and re-render.
+  for (const el of stage.querySelectorAll('.lbl')) el.remove();
+
+  for (const lbl of spec.labels) {
+    const xy = currentXY(lbl);
+    const aPos = dataToStage(lbl.anchor_xy[0], lbl.anchor_xy[1]);
+    const lPos = dataToStage(xy[0], xy[1]);
+
+    // Connector.
+    if (state.connectors) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', aPos.px); line.setAttribute('y1', aPos.py);
+      line.setAttribute('x2', lPos.px); line.setAttribute('y2', lPos.py);
+      line.setAttribute('class', 'connector');
+      const rgb = lbl.color || [0.3,0.3,0.3];
+      const stroke = `rgb(${Math.round(rgb[0]*255)},${Math.round(rgb[1]*255)},${Math.round(rgb[2]*255)})`;
+      line.setAttribute('stroke', stroke);
+      overlay.appendChild(line);
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', aPos.px); dot.setAttribute('cy', aPos.py);
+      dot.setAttribute('r', 2.5); dot.setAttribute('class', 'anchor-dot');
+      overlay.appendChild(dot);
+    }
+
+    // Label box.
+    const div = document.createElement('div');
+    div.className = 'lbl' + (isPinned(lbl) ? ' pinned' : '')
+                  + (state.selected && state.selected.lid === lbl.id ? ' selected' : '');
+    div.textContent = lbl.text;
+    div.style.left = lPos.px + 'px';
+    div.style.top  = lPos.py + 'px';
+    div.style.fontSize = (lbl.fontsize || 8) + 'pt';
+    const rgb = lbl.color || [0.3,0.3,0.3];
+    div.style.borderLeft = div.style.borderRight = div.style.borderTop = div.style.borderBottom
+      = `1.2px solid rgb(${Math.round(rgb[0]*255)},${Math.round(rgb[1]*255)},${Math.round(rgb[2]*255)})`;
+    attachDrag(div, lbl);
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      resetOne(lbl.id);
+    });
+    stage.appendChild(div);
+  }
+
+  // Pin count.
+  const pc = state.positions[state.active] || {};
+  const nPin = Object.keys(pc).length;
+  const nTot = spec.labels.length;
+  $('pin-count').textContent = `${nPin} / ${nTot} pinned`;
+}
+
+function attachDrag(div, lbl) {
+  let dragging = false, startStage = null, startDataXY = null;
+  div.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragging = true;
+    div.classList.add('dragging');
+    div.setPointerCapture(e.pointerId);
+    state.selected = { fkey: state.active, lid: lbl.id };
+    $('sel-info').textContent = `${lbl.text.replace(/\n/g, ' ')} [id=${lbl.id}]`;
+    startStage = { px: e.clientX, py: e.clientY };
+    startDataXY = currentXY(lbl).slice();
+  });
+  div.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const sr = stage.getBoundingClientRect();
+    const cur = stageToData(e.clientX - sr.left, e.clientY - sr.top);
+    $('cur-xy').textContent = `x=${cur.x.toFixed(2)}, y=${cur.y.toFixed(2)}`;
+    // Move the div optimistically for responsiveness.
+    div.style.left = (e.clientX - sr.left) + 'px';
+    div.style.top  = (e.clientY - sr.top ) + 'px';
+    // Update connector live.
+    const aPos = dataToStage(lbl.anchor_xy[0], lbl.anchor_xy[1]);
+    const line = overlay.querySelectorAll('line')[
+      state.specs[state.active].labels.indexOf(lbl)];
+    if (line) {
+      line.setAttribute('x2', e.clientX - sr.left);
+      line.setAttribute('y2', e.clientY - sr.top);
+    }
+  });
+  const finish = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    div.classList.remove('dragging');
+    const sr = stage.getBoundingClientRect();
+    const cur = stageToData(e.clientX - sr.left, e.clientY - sr.top);
+    const prev = (state.positions[state.active][lbl.id] || null);
+    const next = [cur.x, cur.y];
+    state.positions[state.active][lbl.id] = next;
+    state.undoStack.push({ fkey: state.active, lid: lbl.id, prev, next });
+    state.redoStack = [];
+    render();
+  };
+  div.addEventListener('pointerup',   finish);
+  div.addEventListener('pointercancel', finish);
+}
+
+function resetOne(lid) {
+  const prev = (state.positions[state.active] || {})[lid] || null;
+  if (!prev) return; // was already auto
+  delete state.positions[state.active][lid];
+  state.undoStack.push({ fkey: state.active, lid, prev, next: null });
+  state.redoStack = [];
+  render();
+}
+
+function resetAll() {
+  const prev = Object.assign({}, state.positions[state.active] || {});
+  state.positions[state.active] = {};
+  state.undoStack.push({ fkey: state.active, bulk: prev });
+  state.redoStack = [];
+  render();
+}
+
+function applyUndo(entry, reverse) {
+  if (entry.bulk !== undefined) {
+    const cur = Object.assign({}, state.positions[entry.fkey] || {});
+    state.positions[entry.fkey] = reverse ? Object.assign({}, entry.bulk) : {};
+    entry._redo = cur;
+    return;
+  }
+  const bag = state.positions[entry.fkey] || {};
+  const target = reverse ? entry.prev : entry.next;
+  if (target === null) delete bag[entry.lid];
+  else bag[entry.lid] = target;
+  state.positions[entry.fkey] = bag;
+}
+
+function undo() {
+  const e = state.undoStack.pop(); if (!e) return;
+  applyUndo(e, true);
+  state.redoStack.push(e);
+  render();
+}
+function redo() {
+  const e = state.redoStack.pop(); if (!e) return;
+  applyUndo(e, false);
+  state.undoStack.push(e);
+  render();
+}
+
+async function save() {
+  // Send ALL figures' positions (including empty to delete their entries).
+  const payload = {};
+  for (const f of state.figures) {
+    const bag = state.positions[f.key] || {};
+    payload[f.key] = {};
+    // For every label on this figure that was previously pinned but now
+    // isn't, send null (server deletes). For currently pinned ones, send xy.
+    const prev = state.initialLoad[f.key] || {};
+    for (const lid of Object.keys(prev)) {
+      if (!(lid in bag)) payload[f.key][lid] = null;
+    }
+    for (const [lid, xy] of Object.entries(bag)) {
+      payload[f.key][lid] = xy;
+    }
+  }
+  const r = await fetch('/api/save', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload) });
+  const d = await r.json();
+  if (d.ok) {
+    toast('Saved ✓ — re-run 06_render_atlas_views.py to regenerate PDFs.');
+    state.initialLoad = Object.fromEntries(
+      state.figures.map(f => [f.key, Object.assign({}, state.positions[f.key] || {})]));
+    $('file-info').textContent = `Saved to ${d.path}`;
+  } else {
+    toast('Save failed: ' + (d.error || 'unknown'), true);
+  }
+}
+
+// ---- Global handlers ----
+window.addEventListener('resize', () => {
+  measureBgBBox(); render();
+});
+document.addEventListener('mousemove', (e) => {
+  if (!state.bgBBox) return;
+  const sr = stage.getBoundingClientRect();
+  const px = e.clientX - sr.left, py = e.clientY - sr.top;
+  if (px < 0 || py < 0 || px > sr.width || py > sr.height) return;
+  const d = stageToData(px, py);
+  $('cur-xy').textContent = `x=${d.x.toFixed(2)}, y=${d.y.toFixed(2)}`;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); redo(); }
+  else if (!e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  else if (!e.ctrlKey && e.key.toLowerCase() === 'c') {
+    state.connectors = !state.connectors;
+    $('btn-connectors').textContent = state.connectors ? 'Hide connectors' : 'Show connectors';
+    render();
+  }
+});
+
+$('btn-save').onclick = save;
+$('btn-reset-all').onclick = resetAll;
+$('btn-reset-sel').onclick = () => {
+  if (!state.selected) return toast('Select a label first', true);
+  resetOne(state.selected.lid);
+};
+$('btn-connectors').onclick = () => {
+  state.connectors = !state.connectors;
+  $('btn-connectors').textContent = state.connectors ? 'Hide connectors' : 'Show connectors';
+  render();
+};
+
+boot().catch((e) => { document.body.innerHTML = '<pre style="color:#f87171">' + e + '</pre>'; });
+})();
+</script>
+</body>
+</html>

@@ -32,7 +32,7 @@ from .authors import (
     normalize_orcid,
     surname,
 )
-from .frontmatter import is_front_matter
+from .frontmatter import INFLATED_AUTHOR_DOIS, is_front_matter
 
 
 def _build_alias_map() -> dict[str, str]:
@@ -127,6 +127,14 @@ def _load_all(venues: list[dict]) -> pd.DataFrame:
     dropped = n_before - len(df)
     if dropped:
         log.info(f"filtered {dropped} front-matter entries ({dropped/n_before:.1%})")
+    # Drop records where OpenAlex inflated the author list with the issue's
+    # roster (Crossref-verified denylist; see frontmatter.INFLATED_AUTHOR_DOIS).
+    n_before = len(df)
+    inflated_mask = df["doi"].astype(str).str.lower().isin(INFLATED_AUTHOR_DOIS)
+    df = df.loc[~inflated_mask].reset_index(drop=True)
+    n_inflated = n_before - len(df)
+    if n_inflated:
+        log.info(f"dropped {n_inflated} records with inflated author lists (DOI denylist)")
     return df
 
 
