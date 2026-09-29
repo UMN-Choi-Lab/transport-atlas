@@ -317,11 +317,17 @@ def _tfidf_labels(comm_members: dict[int, list[str]], paper_records, label_of: d
     for cid, members in comm_members.items():
         docs[cid] = " ".join(t for m in members for t in author_titles.get(m, []))
 
-    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
+
+    from .frontmatter import LABEL_STOPWORDS
+    # Merge sklearn's english list + graph stop list + shared editorial-token
+    # denylist (reviewer response: "staff", "calendar", "editor column", … must
+    # never label a community). Stop words are removed BEFORE n-gram assembly,
+    # so stopping one member of an editorial bigram kills the bigram too.
     vec = TfidfVectorizer(
         max_df=0.5,
         min_df=3,
-        stop_words=sorted(_STOP),
+        stop_words=sorted(set(ENGLISH_STOP_WORDS) | _STOP | LABEL_STOPWORDS),
         token_pattern=r"[A-Za-z][A-Za-z\-]{2,}",
         ngram_range=(1, 2),
     )

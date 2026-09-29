@@ -231,6 +231,52 @@ venues:
     jif_2024: 3.7
     quartile: Q2
 
+  # ==== Operations Research / supply-chain logistics venues ====
+  # Adjacent OR/OM outlets with substantial vehicle-routing, freight, and
+  # supply-chain content that overlaps with TR-B / TR-E / Transportation
+  # Science. JIFs sourced from JCR 2024 "OPERATIONS RESEARCH & MANAGEMENT
+  # SCIENCE" category (different from Transportation). OpenAlex only.
+  # Ingested 2026-04-28 then disabled 2026-04-29 after isolation analysis:
+  # OR/OM authors form a near-isolated subgraph (3.5% cross-edges, 6.6%
+  # bridge papers vs the transportation core). Raw OpenAlex JSONL kept on
+  # disk under data/raw/openalex/{ejor,ijoc,mansci,opres}.jsonl so flipping
+  # `enabled: true` here will rebuild the corpus without re-ingesting.
+  - slug: ejor
+    enabled: false
+    name: "European Journal of Operational Research"
+    short: "EJOR"
+    issns: ["0377-2217", "1872-6860"]
+    publisher: elsevier
+    jif_2024: 6.0
+    quartile: Q1
+
+  - slug: ijoc
+    enabled: false
+    name: "INFORMS Journal on Computing"
+    short: "IJoC"
+    issns: ["1091-9856", "1526-5528"]
+    publisher: informs
+    jif_2024: 2.1
+    quartile: Q3
+
+  - slug: mansci
+    enabled: false
+    name: "Management Science"
+    short: "MnSci"
+    issns: ["0025-1909", "1526-5501"]
+    publisher: informs
+    jif_2024: 4.6
+    quartile: Q1
+
+  - slug: opres
+    enabled: false
+    name: "Operations Research"
+    short: "OpRes"
+    issns: ["0030-364X", "1526-5463"]
+    publisher: informs
+    jif_2024: 2.7
+    quartile: Q2
+
   # ==== JCR Transportation — niche, disabled by default ====
   - slug: mel
     enabled: false

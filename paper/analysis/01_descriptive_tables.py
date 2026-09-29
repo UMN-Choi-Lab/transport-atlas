@@ -88,13 +88,30 @@ def _tex_escape(s: str) -> str:
     }
     for k, v in repl.items():
         s = s.replace(k, v)
+    # One-off data fix for a mojibake'd OpenAlex name (U+017A the T1 font lacks);
+    # the durable fix belongs in the pipeline author-alias map.
+    s = s.replace("Balaźs", "Balázs")
+    # Normalize Unicode punctuation the T1-encoded body font can't render
+    # (OpenAlex names/titles carry U+2010 hyphens, en/em dashes, smart quotes).
+    # Applied after the special-char escaping so the LaTeX we introduce here
+    # (e.g. \ldots) is not re-escaped.
+    uni = {
+        "‐": "-", "‑": "-", "‒": "--", "–": "--",
+        "—": "---", "‘": "`", "’": "'",
+        "“": "``", "”": "''", "…": r"\ldots{}",
+        # Rare accented letters absent from T1 Latin Modern -> compose via accent
+        "ź": r"\'z", "Ź": r"\'Z",
+        " ": " ",
+    }
+    for k, v in uni.items():
+        s = s.replace(k, v)
     return s
 
 
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
-YEAR_MAX = 2025  # exclude partial 2026 snapshot from all analyses
+YEAR_MAX = 2026  # include 2026 in-press: all-years corpus for AI4T submission
 
 
 def load_all():
@@ -214,12 +231,29 @@ def table_top_contributors(venue_stats: list[dict], venues_cfg: list[dict]) -> N
 def table_top_papers(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
     order = {v["slug"]: i for i, v in enumerate(venues_cfg)}
     vs = sorted(venue_stats, key=lambda v: order.get(v["slug"], 999))
+    # Emitted as a longtable so the 34x3 rows page-break in the landscape float
+    # (main.tex wraps this in \begin{landscape}\footnotesize ... \end{landscape}).
     lines = [
-        r"\begin{tabular}{lp{7.0cm}rrl}",
+        r"\begin{longtable}{lp{14cm}rrp{4.5cm}}",
+        r"\caption{Three most-cited papers per venue.}",
+        r"\label{tab:top-papers} \\",
         r"\toprule",
         (r"\textbf{Venue} & \textbf{Title} & "
          r"\textbf{Year} & \textbf{Cites} & \textbf{First author} \\"),
         r"\midrule",
+        r"\endfirsthead",
+        (r"\multicolumn{5}{l}{\emph{\tablename~\thetable{} -- "
+         r"continued from previous page}} \\"),
+        r"\toprule",
+        (r"\textbf{Venue} & \textbf{Title} & "
+         r"\textbf{Year} & \textbf{Cites} & \textbf{First author} \\"),
+        r"\midrule",
+        r"\endhead",
+        r"\midrule",
+        r"\multicolumn{5}{r}{\emph{continued on next page}} \\",
+        r"\endfoot",
+        r"\bottomrule",
+        r"\endlastfoot",
     ]
     for v in vs:
         top_papers = v.get("top_papers", [])[:3]
@@ -236,7 +270,7 @@ def table_top_papers(venue_stats: list[dict], venues_cfg: list[dict]) -> None:
             )
         if top_papers:
             lines.append(r"\addlinespace")
-    lines += [r"\bottomrule", r"\end{tabular}"]
+    lines += [r"\end{longtable}"]
     (TABLES / "04_top_papers.tex").write_text("\n".join(lines) + "\n")
     print(f"  ✓ tables/04_top_papers.tex")
 
@@ -337,6 +371,8 @@ def fig_papers_by_year_stacked(papers: pd.DataFrame,
 
     slug_to_short = {v["slug"]: v.get("short", v["slug"]) for v in venues_cfg}
 
+    # Trend plotted through 2025; 2026 in-press is in corpus totals but omitted
+    # here to avoid a partial-year cliff (YEAR_MAX=2026 still counts it).
     years = np.arange(1967, 2026)
     # Build a matrix: rows = venue groups, cols = years
     data = []
@@ -407,7 +443,8 @@ def fig_team_size_over_time(papers: pd.DataFrame,
     overall = papers.groupby("year")["n_authors"].mean().rolling(
         3, center=True, min_periods=1).mean()
     ax.plot(overall.index, overall.values, color="#666666",
-            linewidth=1.2, linestyle="--", label="All 36 venues")
+            linewidth=1.2, linestyle="--",
+            label=f"All {papers['venue_slug'].nunique()} venues")
 
     ax.set_xlabel("Year", fontsize=9)
     ax.set_ylabel("Avg authors per paper", fontsize=9)

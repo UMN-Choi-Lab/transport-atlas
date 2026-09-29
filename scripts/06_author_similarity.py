@@ -542,7 +542,9 @@ def main() -> int:
     # compute here from author_titles so labels reflect semantic clustering).
     print(f"[sim] building semantic community labels...", flush=True)
     # For label text, use titles of all papers authored by community members.
-    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
+
+    from transport_atlas.process.frontmatter import LABEL_STOPWORDS
     n_sc = max(sem_comm) + 1 if sem_comm else 0
     member_titles: list[list[str]] = [[] for _ in range(n_sc)]
     for i, k in enumerate(keys):
@@ -582,8 +584,13 @@ def main() -> int:
         "data","time","high","low","non","multi","ieee","society","international","paper",
         "paper:","paper,","—","–","·",
     }
+    # Merge sklearn's english list + the local set + the shared editorial-token
+    # denylist (reviewer response: "staff", "calendar", "editor column", … must
+    # never label a community). sklearn removes stop words BEFORE building
+    # n-grams, so stopping one member of an editorial bigram kills the bigram.
+    _LABEL_STOPS = sorted(set(ENGLISH_STOP_WORDS) | _STOP_SEM | LABEL_STOPWORDS)
     try:
-        vec = TfidfVectorizer(max_df=0.5, min_df=3, stop_words=sorted(_STOP_SEM),
+        vec = TfidfVectorizer(max_df=0.5, min_df=3, stop_words=_LABEL_STOPS,
                               token_pattern=r"[A-Za-z][A-Za-z\-]{2,}",
                               ngram_range=(1, 2))
         joined = [" ".join(d) for d in docs_sc]
@@ -662,7 +669,7 @@ def main() -> int:
                 docs_cc[cc].append(title)
                 visited_ccs.add(cc)
     try:
-        vec2 = TfidfVectorizer(max_df=0.5, min_df=3, stop_words=sorted(_STOP_SEM),
+        vec2 = TfidfVectorizer(max_df=0.5, min_df=3, stop_words=_LABEL_STOPS,
                                token_pattern=r"[A-Za-z][A-Za-z\-]{2,}",
                                ngram_range=(1, 2))
         joined = [" ".join(d) for d in docs_cc]

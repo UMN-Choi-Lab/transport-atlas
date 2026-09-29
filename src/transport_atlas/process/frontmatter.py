@@ -27,6 +27,17 @@ FRONT_MATTER_EXACT = {
     "staff list", "staff listing", "editorial board", "issue information",
     "in this issue", "announcements", "scanning the issue", "ieee app",
     "techrxiv", "distinguished lecturer program", "ieee policies",
+    # New (2026-07, reviewer response): bare-title boilerplate found surviving
+    # in data/interim/papers.parquet (counts from the 2026-07-20 snapshot).
+    "calendar", "calendar of events",     # 48× its-mag/vtm/jtg/tpol
+    "introduction",                       # 70× bare CACIE issue intros
+    "forthcoming papers",                 # 184× Elsevier TR-A/B/C, AAP
+    "notice", "publisher's note", "publishers note",
+    "correction", "corrections",
+    "obituary", "bookshelf", "diary",
+    "president's message", "editor's column",
+    "reviewers list", "thanks to reviewers",
+    "news, queries & answers", "news, queries &amp; answers",
 }
 
 _FRONT_MATTER_PREFIX = re.compile(
@@ -50,7 +61,7 @@ _FRONT_MATTER_PREFIX = re.compile(
     r"\d{4}\s+ieee\s+[a-z\s]+\s+(?:index|elections)\b|"
     r"volume\s+\d+\s+index\b|"
     r"guest editorial\b|"
-    r"editorial:?\s|"
+    r"editorial(?:[:—–]|\s)|"  # "Editorial: X", "Editorial—X" (em/en dash)
     r"editorial\s+board\b|"
     r"editor'?s? note\b|"
     r"corrigendum\s+to\b|"
@@ -75,10 +86,69 @@ _FRONT_MATTER_PREFIX = re.compile(
     r"distinguished lecturer program\b|"
     r"techrxiv\b|"
     r"ieee app\b|"
+    # New (2026-07, reviewer response): editorial/boilerplate prefixes verified
+    # against the 2026-07-20 corpus snapshot (counts in comments). Patterns are
+    # kept narrow so real papers survive (e.g. "Correction of Field Skid
+    # Measurements…" and "Meeting points in ridesharing…" must NOT match).
+    r"editor'?s?\s+column\b|"                      # 2× its-mag
+    r"president'?s?\s+message\b|"                  # 1× + tag-suffix variants
+    r"in\s+memoriam\b|"                            # 26×
+    r"obituar(?:y|ies)\b|"                         # 4×
+    r"book\s+reviews?\b|"                          # 311×
+    r"forthcoming\s+papers\b|"                     # 184×
+    r"list\s+of\s+(?:forthcoming\s+papers|contents)\b|"  # 64×
+    r"reviewers'?\s+list\b|"                       # 2×
+    r"thanks?\s+(?:to|you\s+to)\s+(?:the\s+)?(?:reviewers|referees)\b|"  # 16×
+    r"itsc\s*'?\s*\d|"                             # "ITSC 2011", "ITSC'09" announcements
+    r"special\s+issue\b|"                          # 100× SI announcements/guest intros
+    r"introduction\s+to\s+the\s+(?:special|featured)\s+(?:issue|section)\b|"
+    r"publisher'?s\s+note\b|"
+    r"news,\s*queries\b|"                          # AAP "News, queries & answers"
+    r"correction(?:s)?\s+to\b|"                    # "Correction to: X" errata
+    r"correction:\s|"
+    r"errat(?:um|a)\b|"                            # "Erratum—X", "Erratum: X", "Erratum regarding…"
+    r"corrigend(?:um|a)\b|"                        # any corrigendum variant
+    r"calendar\s*(?:$|\(|\[|of\s+events)|"         # "Calendar (2009)", "Calendar of Events"
     r".{0,80}\bbest (?:transactions )?paper award\b"
     r")",
     re.IGNORECASE,
 )
+
+# IEEE-magazine department tags: titles end with "[<department>]". Content
+# departments ([Mobile Radio], [Automotive Electronics], [ITS Research Lab],
+# [Standards], …) carry real technical articles and MUST survive — only the
+# editorial/metadata departments below are front matter. Denylist verified
+# against the 1,066 bracket-tagged titles in the 2026-07-20 snapshot.
+_EDITORIAL_TAG = re.compile(
+    r"\[(?:"
+    r"from the (?:guest )?editors?|"
+    r"(?:past )?presidents?'?s? message|"
+    r"editor'?s column|"
+    r"society news|social news|vts news|"
+    r"calendar(?: of events)?|"
+    r"front cover|back cover|"
+    r"(?:guest )?editorial|"
+    r"book reviews?|"
+    r"in memoriam|"
+    r"errat(?:um|a)|corrigend(?:um|a)|"
+    r"call for papers|"
+    r"conference reports?|"
+    r"its people|its fun|its events|its conference activities|"
+    r"member activities|technical activities|technical committees|"
+    r"awards?|advertisement|"
+    r"staff list(?:ing)?|"
+    r"scanning the issue|table of contents|in this issue|"
+    r"society information|publication information|"
+    r"\d{4} index|"
+    r"ph\.?d\.?.{0,20}theses'? abstracts?"
+    r")\]\s*$",
+    re.IGNORECASE,
+)
+
+# Suffix-only boilerplate without brackets, e.g.
+# "Vehicular Technology Magazine Staff List" (journal-name prefix defeats the
+# prefix regex; _JOURNAL_NAME_ONLY requires the name to be the whole title).
+_FRONT_MATTER_SUFFIX = re.compile(r"\bstaff\s+list(?:ing)?\s*$", re.IGNORECASE)
 
 
 # Titles that are *exactly* a journal-masthead-sounding name (no descriptive content).
@@ -120,14 +190,48 @@ INFLATED_AUTHOR_DOIS = frozenset({
 
 
 def is_front_matter(title: str | None) -> bool:
-    t = (title or "").strip().rstrip(".").lower()
+    # Normalize curly apostrophes: IEEE metadata mixes "President's" / "President’s".
+    t = (title or "").replace("’", "'").strip().rstrip(".").lower()
     if not t:
         return True
     if t in FRONT_MATTER_EXACT:
         return True
     if _FRONT_MATTER_PREFIX.match(t):
         return True
+    if _EDITORIAL_TAG.search(t):
+        return True
+    if _FRONT_MATTER_SUFFIX.search(t):
+        return True
     # "Title" that is literally only a journal name — masthead entries.
     if _JOURNAL_NAME_ONLY.match(t) and len(t) < 80:
         return True
     return False
+
+
+# ——— Community-label hygiene (2026-07, reviewer response) ————————————————————
+# Editorial/metadata tokens that must never surface in TF-IDF community labels
+# (coauthor_graph._tfidf_labels + the semantic/combined label blocks in
+# scripts/06_author_similarity.py). This is defense-in-depth on top of
+# is_front_matter(): even if a boilerplate title slips the corpus filter, its
+# tokens cannot become label words. sklearn removes stop words BEFORE building
+# n-grams, so stopping either member of a bigram ("editor column",
+# "scanning issue", "president message") prevents the bigram from forming.
+#
+# Deliberately NOT included, because they are load-bearing in real research
+# terms: "scanning" (laser scanning), "information" (traveler information,
+# building information), "volume" (traffic volume), "index" (pavement condition
+# index), "board" (on-board), "message" (V2V message dissemination), "meeting"
+# (meeting points/appointments), "columns" (bridge columns — only the singular
+# editorial "column" is stopped).
+LABEL_STOPWORDS = frozenset({
+    "editorial", "editorials", "editor", "editors", "column",
+    "president", "presidents", "calendar", "staff", "list", "lists",
+    "issue", "issues", "memoriam", "obituary", "obituaries",
+    "erratum", "errata", "corrigendum", "corrigenda", "correction",
+    "corrections", "retraction", "retracted", "foreword", "preface",
+    "masthead", "frontispiece", "colophon", "toc", "contents", "cover",
+    "announcement", "announcements", "welcome", "reviewers", "referees",
+    "award", "awards", "society", "ieee", "bookshelf", "news", "notice",
+    "notices", "publisher", "publication", "forthcoming", "papers",
+    "paper", "note", "guest", "thanks",
+})

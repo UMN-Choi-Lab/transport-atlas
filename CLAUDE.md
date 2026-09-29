@@ -138,6 +138,8 @@ The `paper/manuscript/` directory is a **separate git repo** whose remote is Ove
 
 Token: `OVERLEAF` in `/home/chois/gitsrcs/transportation/.env` (gitignored). Never embed the token in commits or commit messages.
 
+The manuscript is already cloned at `paper/manuscript/` — never re-clone it. Its `origin` URL has **no token baked in**, so bare `git clone`/`pull`/`push origin` fail with `Missing or invalid credentials`; always inject the token as in the commands below (or fetch via the tokenized URL).
+
 ```bash
 # Commit locally on main, then push main -> master via tokenized URL:
 set -a; . /home/chois/gitsrcs/transportation/.env; set +a

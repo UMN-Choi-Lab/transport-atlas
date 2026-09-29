@@ -68,12 +68,18 @@ def main() -> int:
     cases = d["cases"]
 
     ks = sorted(int(k.split("=")[1]) for k in metrics)
-    methods = ("phantom", "random", "pref_attach", "same_venue")
+    # Corrected R4 evaluation: 7 methods, ordered phantom first then baselines
+    # from most- to least-structured (graph baselines, structural, naive).
+    methods = ("phantom", "graph_ppr", "config_degree", "same_community",
+               "same_venue", "pref_attach", "random")
     method_label = {
-        "phantom":    r"Phantom (semantic)",
-        "random":     r"Random",
-        "pref_attach": r"Popularity-weighted",
-        "same_venue": r"Same-venue",
+        "phantom":        r"Phantom (semantic)",
+        "graph_ppr":      r"Graph PPR",
+        "config_degree":  r"Configuration-model",
+        "same_community": r"Same-community",
+        "same_venue":     r"Same-venue",
+        "pref_attach":    r"Popularity-weighted",
+        "random":         r"Random",
     }
 
     # ------------------------------------------------------------------
@@ -86,7 +92,7 @@ def main() -> int:
                 linewidth=2.0 if m == "phantom" else 1.2,
                 label=method_label[m])
     ax.set_xlabel("$K$ (number of phantom partners proposed per author)")
-    ax.set_ylabel(r"Precision @ $K$ (\%)")
+    ax.set_ylabel(r"Precision @ $K$ (%)")
     ax.grid(alpha=0.25)
     ax.legend(frameon=False, loc="upper right", fontsize=8)
     ax.set_xticks(ks)
@@ -101,7 +107,7 @@ def main() -> int:
         r"\toprule",
         (r"\textbf{$K$} & \textbf{Method} & \textbf{Hits} & "
          r"\textbf{Predictions} & \textbf{micro-P (\%)} & "
-         r"\textbf{macro-P (\%)} & \textbf{Lift vs phantom} \\"),
+         r"\textbf{macro-P (\%)} & \textbf{Phantom lift over baseline ($\times$)} \\"),
         r"\midrule",
     ]
     for k in ks:
@@ -187,23 +193,89 @@ def main() -> int:
     (TABLES / "08_phantom_cases.tex").write_text("\n".join(lines) + "\n")
     print("  ✓ tables/08_phantom_cases.tex")
 
+    # ------------------------------------------------------------------
+    # Table + summary — phantom vs graph-PPR complementarity.
+    # The two rankers reach near-identical precision. Do they recover the
+    # SAME realized pairs or DIFFERENT ones? `hit_overlap` (from
+    # phantom_graph_overlap) counts realized hits BOTH methods found; the
+    # rest are recovered by only one, so a low hit-set Jaccard means the
+    # semantic and structural signals are complementary, not redundant.
+    # ------------------------------------------------------------------
+    pgo = d.get("phantom_graph_overlap", {})
+    comp_rows = []
+    complementarity: dict = {}
+    for k in ks:
+        blk = metrics.get(f"K={k}", {})
+        ph = blk.get("phantom", {}).get("hits")
+        gp = blk.get("graph_ppr", {}).get("hits")
+        shared = pgo.get(f"K={k}", {}).get("hit_overlap")
+        cand_jac = pgo.get(f"K={k}", {}).get("mean_jaccard")
+        if ph is None or gp is None or shared is None:
+            continue
+        union = ph + gp - shared
+        jac = shared / union if union else None
+        comp_rows.append((k, ph, gp, shared, union, jac))
+        complementarity[f"K={k}"] = {
+            "phantom_hits": ph, "graph_ppr_hits": gp, "shared_hits": shared,
+            "phantom_only_hits": ph - shared,
+            "graph_ppr_only_hits": gp - shared,
+            "union_hits": union,
+            "hitset_jaccard": jac,
+            "union_gain_over_phantom": (union / ph) if ph else None,
+            "candidate_mean_jaccard": cand_jac,
+        }
+    if comp_rows:
+        lines = [
+            r"\begin{tabular}{lrrrrr}",
+            r"\toprule",
+            (r"\textbf{$K$} & \textbf{Phantom} & \textbf{Graph-PPR} & "
+             r"\textbf{Shared} & \textbf{Union} & \textbf{Hit-set} \\"),
+            (r" & \textbf{hits} & \textbf{hits} & \textbf{hits} & "
+             r"\textbf{(oracle)} & \textbf{Jaccard} \\"),
+            r"\midrule",
+        ]
+        for (k, ph, gp, shared, union, jac) in comp_rows:
+            lines.append(
+                f"{k} & {ph:,} & {gp:,} & {shared:,} & {union:,} & "
+                f"{jac:.3f} \\\\")
+        lines += [r"\bottomrule", r"\end{tabular}"]
+        (TABLES / "08_phantom_complementarity.tex").write_text(
+            "\n".join(lines) + "\n")
+        print("  ✓ tables/08_phantom_complementarity.tex")
+
     # Prose summary (for quoting in §8 text)
+    # Lift is recomputed from micro-precision ratios (the per-method
+    # `lift_phantom_vs` field of the 4-method JSON no longer exists); the
+    # phantom-vs-degree-preserving-null stats come from phantom's config_null.
+    def _mp(k, m):
+        return metrics[f"K={k}"][m]["micro_precision"]
+
+    def _lift(k, m):
+        base = _mp(k, m)
+        return (_mp(k, "phantom") / base) if base > 0 else None
+
+    ph_null20 = metrics["K=20"]["phantom"].get("config_null", {})
     summary = {
         "train_cutoff":   cfg["train_cutoff_year"],
         "test_window":    cfg["test_years"],
         "n_eval_authors": cfg["n_eval_authors"],
         "n_authors_with_realized": cfg["n_authors_with_realized"],
-        "best_K":         max(
-            ks, key=lambda k: metrics[f"K={k}"]["phantom"]["micro_precision"]
-        ),
-        "phantom_precision_at_20": metrics["K=20"]["phantom"]["micro_precision"],
-        "lift_vs_random_at_20":    metrics["K=20"]["random"]["lift_phantom_vs"],
-        "lift_vs_pref_at_20":      metrics["K=20"]["pref_attach"]["lift_phantom_vs"],
-        "lift_vs_venue_at_20":     metrics["K=20"]["same_venue"]["lift_phantom_vs"],
+        "best_K":         max(ks, key=lambda k: _mp(k, "phantom")),
+        "phantom_precision_at_20": _mp(20, "phantom"),
+        "lift_vs_random_at_20":         _lift(20, "random"),
+        "lift_vs_pref_at_20":           _lift(20, "pref_attach"),
+        "lift_vs_venue_at_20":          _lift(20, "same_venue"),
+        "lift_vs_graph_ppr_at_20":      _lift(20, "graph_ppr"),
+        "lift_vs_config_degree_at_20":  _lift(20, "config_degree"),
+        "lift_vs_same_community_at_20": _lift(20, "same_community"),
+        "phantom_null_z_at_20":         ph_null20.get("z_score"),
+        "phantom_null_p_at_20":         ph_null20.get("p_one_sided"),
+        "phantom_lift_vs_null_at_20":   ph_null20.get("lift_vs_null"),
         "calibration_topbin_rate": (calib[-1]["realize_rate"]
                                     if calib else None),
         "calibration_botbin_rate": (calib[0]["realize_rate"]
                                     if calib else None),
+        "complementarity": complementarity,
     }
     (ROOT / "paper" / "analysis" / "_phantom_summary.json").write_text(
         json.dumps(summary, indent=2)
